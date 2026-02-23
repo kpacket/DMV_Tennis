@@ -858,16 +858,40 @@ function getPlayerStats(pid, season){
 // Rebuild all stats for a season from scratch based on all saved scores
 function rebuildSeasonStats(season){
   if(!S.playerStats) S.playerStats={};
-  // Clear existing stats for this season
+
+  // Clear existing match stats AND attendance for this season
   for(var pid in S.playerStats){
     if(S.playerStats[pid][season]) delete S.playerStats[pid][season];
+    if(S.playerStats[pid][season+'_att'] !== undefined) S.playerStats[pid][season+'_att']=0;
   }
-  // Loop all sessions in this season
+
   var dates = S.seasons[season] || [];
   for(var di=0; di<dates.length; di++){
     var date = dates[di];
     var sess = S.sessions[date];
-    if(!sess || !sess.assignments || !sess.scores) continue;
+    if(!sess || !sess.assignments) continue;
+
+    // Attendance: count each IN player once per session IF any score exists for that date
+    var scores = sess.scores || {};
+    var hasAnyScore = false;
+    var scoreKeys = Object.keys(scores);
+    for(var ski=0; ski<scoreKeys.length; ski++){
+      var skv = scores[scoreKeys[ski]];
+      if(skv && skv.t1!=='' && skv.t2!=='') { hasAnyScore=true; break; }
+    }
+    if(hasAnyScore){
+      var rsvps = sess.rsvps || {};
+      for(var rpid in rsvps){
+        if(rsvps[rpid]==='IN'){
+          var rpidInt = parseInt(rpid);
+          if(!S.playerStats[rpidInt]) S.playerStats[rpidInt]={};
+          S.playerStats[rpidInt][season+'_att'] = (S.playerStats[rpidInt][season+'_att']||0) + 1;
+        }
+      }
+    }
+
+    // Match/game stats from scores
+    if(!sess.scores) continue;
     var rounds = sess.assignments.rounds || [];
     for(var ri=0; ri<rounds.length; ri++){
       var round = rounds[ri];
