@@ -815,8 +815,8 @@ function sessionHTML(){
     +'<div><label>Matches per Player (1–8)</label><input id="s-matches" type="number" min="1" max="8" value="'+sess.matchesPerPlayer+'"></div>'
     +'</div>'+infoBar+'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-    +'<button class="btn btn-primary" id="gen-btn">🎾 Generate Assignments</button>'
-    +(sess.type!=='singles'?'<button class="btn btn-secondary" id="manual-partners-btn">✋ Assign Partners</button>':'')
+    +'<button class="btn btn-primary" id="gen-btn">🎾 Auto Assign Partners</button>'
+    +(sess.type!=='singles'?'<button class="btn btn-secondary" id="manual-partners-btn">✋ Manually Assign Partners</button>':'')
     +postBtnHTML+'</div>';
   if(sess.assignments){
     var inp2=getInPlayers(date), hlOpts='<option value="">-- Select your name --</option>';
