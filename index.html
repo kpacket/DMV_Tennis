@@ -104,9 +104,13 @@ td{padding:8px;border-bottom:1px solid #eee;vertical-align:middle}
 .player-chip.hl{background:#f5a623;border-color:#e67e00;font-weight:700}
 .bye-chip{background:#fff3cd;border:1.5px solid #e6ac00}
 .vs{text-align:center;font-weight:700;color:#888;margin:3px 0;font-size:.78rem}
-.score-row{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px dashed #ccc;flex-wrap:wrap}
+.score-row{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:8px;padding-top:8px;border-top:1px dashed #ccc}
 .score-badge{background:#e8f5e9;border-radius:6px;padding:3px 8px;font-size:.82rem;font-weight:700;color:#1a5c2a}
 .score-na{color:#aaa;font-size:.8rem;font-style:italic;flex:1}
+.team-row{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.team-score{background:#1a5c2a;color:#fff;border-radius:6px;padding:2px 10px;font-size:.85rem;font-weight:700;min-width:28px;text-align:center;flex-shrink:0}
+.team-score.winner{background:#f5a623;color:#222}
+.team-score.empty{background:#eee;color:#aaa}
 .bye-row{background:#fff3cd;border-radius:6px;padding:8px 12px;margin-top:8px;font-size:.85rem}
 .alert{padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:.88rem}
 .alert-info{background:#d1ecf1;color:#0c5460}
@@ -229,6 +233,7 @@ var S = {
   currentSeason: 'Winter',
   sessions: {},
   byeCounts: {},
+  playerStats: {},
   isAdmin: false,
   selectedDate: null,
   adminTab: 'roster',
@@ -262,6 +267,7 @@ function saveLocalPrefs(){
 // ── Save shared data to Firebase (debounced 400ms) ────
 function save(){
   saveLocalPrefs();
+  if(!dbRef){ return; } // Firebase not ready yet — skip remote save
   setSyncDot('saving');
   if(_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(function(){
@@ -269,7 +275,8 @@ function save(){
       players: S.players || [],
       seasons: S.seasons || {},
       sessions: S.sessions || {},
-      byeCounts: S.byeCounts || {}
+      byeCounts: S.byeCounts || {},
+      playerStats: S.playerStats || {}
     };
     // Firebase doesn't support undefined values — strip them
     window._fbSet(dbRef, JSON.parse(JSON.stringify(data)))
@@ -291,10 +298,11 @@ function initFirebaseListener() {
   window._fbOnValue(dbRef, function(snapshot){
     var data = snapshot.val();
     if(data){
-      S.players    = data.players    || [];
-      S.seasons    = data.seasons    || {Spring:[],Summer:[],Fall:[],Winter:[]};
-      S.sessions   = data.sessions   || {};
-      S.byeCounts  = data.byeCounts  || {};
+      S.players     = data.players     || [];
+      S.seasons     = data.seasons     || {Spring:[],Summer:[],Fall:[],Winter:[]};
+      S.sessions    = data.sessions    || {};
+      S.byeCounts   = data.byeCounts   || {};
+      S.playerStats = data.playerStats || {};
     }
     setSyncDot('synced');
     if(!_loaded){
@@ -327,8 +335,8 @@ function fmtDate(d){
   catch(e){ return d||''; }
 }
 function getSession(date){
-  if(!date) return {type:'doubles',rotatePartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
-  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!date) return {type:'doubles',rotatePartners:true,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:true,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
   var sess=S.sessions[date];
   if(!sess.scores) sess.scores={};
   if(!sess.rsvps) sess.rsvps={};
@@ -484,18 +492,21 @@ function roundsHTML(sess,date,hid){
         +'<div class="court-body">';
       for(var ti=0;ti<court.teams.length;ti++){
         var team=court.teams[ti]; if(!Array.isArray(team)) continue;
-        out+='<div class="team"><div class="team-label">Team '+(ti+1)+'</div>';
+        var teamScore = sc ? (ti===0 ? sc.t1 : sc.t2) : null;
+        var otherScore = sc ? (ti===0 ? sc.t2 : sc.t1) : null;
+        var isWinner = sc && parseInt(teamScore) > parseInt(otherScore);
+        out+='<div class="team"><div class="team-row"><div class="team-label" style="margin:0">Team '+(ti+1)+'</div>';
+        out+='<span class="team-score'+(sc ? (isWinner ? ' winner' : '') : ' empty')+'">'+(sc ? esc(teamScore) : '—')+'</span>';
+        out+='</div><div style="margin-top:4px">';
         for(var pi=0;pi<team.length;pi++){
           var pid2=team[pi], tp=getPlayer(pid2);
           out+='<span class="player-chip'+(pid2===hid?' hl':'')+'">'+fmtId(pid2)+' '+(tp?esc(tp.name):'?')+'</span>';
         }
-        out+='</div>';
+        out+='</div></div>';
         if(ti===0&&court.teams.length>1) out+='<div class="vs">VS</div>';
       }
       out+='<div class="score-row">';
-      if(sc) out+='<span class="score-badge">T1: '+esc(sc.t1)+' — T2: '+esc(sc.t2)+'</span>';
-      else out+='<span class="score-na">No score yet</span>';
-      out+='<button class="btn btn-secondary btn-sm" data-score-btn data-date="'+esc(date)+'" data-round="'+ri+'" data-court="'+ci+'">'+(sc?'Edit Score':'+ Score')+'</button>';
+      out+='<button class="btn btn-secondary btn-sm" data-score-btn data-date="'+esc(date)+'" data-round="'+ri+'" data-court="'+ci+'">'+(sc?'✏️ Edit Score':'+ Score')+'</button>';
       out+='</div></div></div>';
     }
     out+='</div>';
@@ -546,11 +557,11 @@ function openScoreModal(date,ri,ci){
     +'<div class="modal-btns">'+clrBtn+'<button class="btn btn-secondary" id="sc-cancel">Cancel</button><button class="btn btn-primary" id="sc-save">Save Score</button></div>');
   byId('sc-cancel').addEventListener('click',closeModal);
   var clr=byId('sc-clear');
-  if(clr) clr.addEventListener('click',function(){ delete sess.scores[key]; S.sessions[date]=sess; save(); closeModal(); showToast('Score cleared.'); });
+  if(clr) clr.addEventListener('click',function(){ delete sess.scores[key]; S.sessions[date]=sess; rebuildSeasonStats(S.currentSeason); save(); closeModal(); showToast('Score cleared.'); });
   byId('sc-save').addEventListener('click',function(){
     var v1=byId('sc-t1').value.trim(), v2=byId('sc-t2').value.trim();
     if(v1===''||v2===''){ showToast('Please enter scores for both teams.'); return; }
-    sess.scores[key]={t1:v1,t2:v2}; S.sessions[date]=sess; save(); closeModal(); showToast('Score saved!');
+    sess.scores[key]={t1:v1,t2:v2}; S.sessions[date]=sess; rebuildSeasonStats(S.currentSeason); save(); closeModal(); showToast('Score saved!');
   });
 }
 
@@ -558,7 +569,7 @@ function openScoreModal(date,ri,ci){
 // ADMIN VIEW
 // ══════════════════════════════════════════════════════
 function adminHTML(){
-  var tabs=['roster','calendar','session','byes'], labels=['Roster','Calendar','Session','Bye Tracker'];
+  var tabs=['roster','calendar','session','byes'], labels=['Roster','Calendar','Session','Stats'];
   var h='<div class="tabs">';
   for(var i=0;i<tabs.length;i++) h+='<button class="tab'+(S.adminTab===tabs[i]?' active':'')+'" data-atab="'+tabs[i]+'">'+labels[i]+'</button>';
   h+='</div>';
@@ -575,6 +586,8 @@ function bindAdmin(){
   var addBtn=byId('add-player-btn'); if(addBtn) addBtn.addEventListener('click',function(){ openPlayerModal(null); });
   var syncBtn=byId('sync-btn'); if(syncBtn) syncBtn.addEventListener('click',openSheetSync);
   var exportBtn=byId('export-btn'); if(exportBtn) exportBtn.addEventListener('click',exportCSV);
+  var importStatsBtn=byId('import-stats-btn'); if(importStatsBtn) importStatsBtn.addEventListener('click',openImportStats);
+  var exportStatsBtn=byId('export-stats-btn'); if(exportStatsBtn) exportStatsBtn.addEventListener('click',exportStats);
   document.querySelectorAll('[data-edit-pid]').forEach(function(b){
     b.addEventListener('click',function(){ openPlayerModal(parseInt(b.dataset.editPid)); });
   });
@@ -634,10 +647,14 @@ function rosterHTML(){
   if(!S.players.length){
     h+='<div class="alert alert-info">No players yet. Add players or import from CSV.</div>';
   } else {
-    h+='<table><tr><th>ID</th><th>Name</th><th>USTA</th><th>Fees</th><th>Actions</th></tr>';
+    h+='<table><tr><th>ID</th><th>Name</th><th>USTA</th><th>Member Status</th><th>Fee Paid</th><th>Actions</th></tr>';
     for(var i=0;i<S.players.length;i++){
       var p=S.players[i];
-      h+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.usta)+'</td><td>$'+(p.fees||0)+'</td>'
+      var ms=p.memberStatus||'Active';
+      var msBadge=ms==='Active'?'badge-in':ms==='Inactive'?'badge-out':'';
+      h+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.usta)+'</td>'
+        +'<td><span class="badge '+msBadge+'">'+esc(ms)+'</span></td>'
+        +'<td>$'+(p.fees||0)+'</td>'
         +'<td style="white-space:nowrap">'
         +'<button class="btn btn-secondary btn-sm" data-edit-pid="'+p.id+'">Edit</button> '
         +'<button class="btn btn-danger btn-sm" data-del-pid="'+p.id+'">Del</button>'
@@ -714,7 +731,7 @@ function sessionHTML(){
     +'</div>'
     +'<div class="card" style="border:1.5px solid #e8f5e9"><h2>Settings</h2>'
     +'<div class="form-row">'
-    +'<div><label>Match Type</label><select id="s-type"><option value="singles"'+(sess.type==='singles'?' selected':'')+'>Singles (2/court)</option><option value="doubles"'+(sess.type==='doubles'?' selected':'')+'>Doubles (4/court)</option></select></div>'
+    +'<div><label>Match Type</label><select id="s-type"><option value="singles"'+(sess.type==='singles'?' selected':'')+'>Singles</option><option value="doubles"'+(sess.type==='doubles'?' selected':'')+'>Doubles</option></select></div>'
     +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'><label>Partners</label><select id="s-rotate"><option value="0"'+(!sess.rotatePartners?' selected':'')+'>Same all day</option><option value="1"'+(sess.rotatePartners?' selected':'')+'>Rotate each round</option></select></div>'
     +'</div><div class="form-row">'
     +'<div><label>Courts Available</label><input id="s-courts" type="number" min="1" max="20" value="'+sess.courts+'"></div>'
@@ -747,19 +764,113 @@ function saveSessionSettings(){
 }
 
 // ── BYES HTML ──────────────────────────────────────────
-function byesHTML(){
-  var season=S.currentSeason;
-  var h='<div class="card"><h2>📊 Bye Tracker — '+season+'</h2>';
-  if(!S.players.length){ h+='<div class="alert alert-info">No players in roster.</div>'; }
-  else {
-    var sorted=S.players.slice().sort(function(a,b){ return ((S.byeCounts[b.id]||{})[season]||0)-((S.byeCounts[a.id]||{})[season]||0); });
-    h+='<table><tr><th>ID</th><th>Name</th><th>Byes This Season</th></tr>';
-    for(var i=0;i<sorted.length;i++){
-      var p=sorted[i];
-      h+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+((S.byeCounts[p.id]||{})[season]||0)+'</td></tr>';
-    }
-    h+='</table>';
+
+// ── STATS HELPERS ──────────────────────────────────────
+function getPlayerStats(pid, season){
+  if(!S.playerStats) S.playerStats={};
+  if(!S.playerStats[pid]) S.playerStats[pid]={};
+  if(!S.playerStats[pid][season]) S.playerStats[pid][season]={wins:0,losses:0,gamesWon:0,gamesLost:0};
+  return S.playerStats[pid][season];
+}
+
+// Rebuild all stats for a season from scratch based on all saved scores
+function rebuildSeasonStats(season){
+  if(!S.playerStats) S.playerStats={};
+  // Clear existing stats for this season
+  for(var pid in S.playerStats){
+    if(S.playerStats[pid][season]) delete S.playerStats[pid][season];
   }
+  // Loop all sessions in this season
+  var dates = S.seasons[season] || [];
+  for(var di=0; di<dates.length; di++){
+    var date = dates[di];
+    var sess = S.sessions[date];
+    if(!sess || !sess.assignments || !sess.scores) continue;
+    var rounds = sess.assignments.rounds || [];
+    for(var ri=0; ri<rounds.length; ri++){
+      var round = rounds[ri];
+      if(!round || !round.courts) continue;
+      for(var ci=0; ci<round.courts.length; ci++){
+        var court = round.courts[ci];
+        if(!court || !court.teams || court.teams.length < 2) continue;
+        var key = ri+'_'+ci;
+        var sc = sess.scores[key];
+        if(!sc || sc.t1==='' || sc.t2==='') continue;
+        var s1=parseInt(sc.t1), s2=parseInt(sc.t2);
+        if(isNaN(s1)||isNaN(s2)) continue;
+        var team1 = court.teams[0] || [], team2 = court.teams[1] || [];
+        var t1wins = s1 > s2, t2wins = s2 > s1;
+        for(var pi=0; pi<team1.length; pi++){
+          var st = getPlayerStats(team1[pi], season);
+          if(t1wins) st.wins++; else if(t2wins) st.losses++;
+          st.gamesWon += s1; st.gamesLost += s2;
+        }
+        for(var pi2=0; pi2<team2.length; pi2++){
+          var st2 = getPlayerStats(team2[pi2], season);
+          if(t2wins) st2.wins++; else if(t1wins) st2.losses++;
+          st2.gamesWon += s2; st2.gamesLost += s1;
+        }
+      }
+    }
+  }
+}
+
+function byesHTML(){
+  var season = S.currentSeason;
+  if(!S.playerStats) S.playerStats={};
+
+  var h = '<div class="card"><h2>📊 Season Stats — '+season+'</h2>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<button class="btn btn-secondary" id="import-stats-btn">Import Stats .CSV</button>'
+    +'<button class="btn btn-secondary" id="export-stats-btn">Export Stats .CSV</button>'
+    +'</div>';
+
+  if(!S.players.length){
+    return h+'<div class="alert alert-info">No players in roster.</div></div>';
+  }
+
+  // Build combined rows
+  var rows = S.players.map(function(p){
+    var bc = (S.byeCounts[p.id]||{})[season]||0;
+    var st = getPlayerStats(p.id, season);
+    var total = st.wins + st.losses;
+    var winPct = total > 0 ? Math.round((st.wins/total)*100) : null;
+    return { p:p, byes:bc, wins:st.wins, losses:st.losses, gamesWon:st.gamesWon, gamesLost:st.gamesLost, winPct:winPct, total:total };
+  });
+
+  // Sort by wins desc, then games won
+  rows.sort(function(a,b){
+    if(b.wins !== a.wins) return b.wins - a.wins;
+    return b.gamesWon - a.gamesWon;
+  });
+
+  h += '<div style="overflow-x:auto">';
+  h += '<table><tr><th>#</th><th>Name</th><th>Matches Won</th><th>Matches Lost</th><th>Win%</th><th>Games Won</th><th>Games Lost</th><th>Byes</th></tr>';
+  for(var i=0; i<rows.length; i++){
+    var r = rows[i];
+    var winPctStr = r.winPct !== null ? r.winPct+'%' : '—';
+    var medal = i===0&&r.total>0 ? '🥇 ' : i===1&&r.total>0 ? '🥈 ' : i===2&&r.total>0 ? '🥉 ' : '';
+    h += '<tr>'
+      +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'
+      +'<td><strong>'+medal+esc(r.p.name)+'</strong></td>'
+      +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'
+      +'<td style="color:#721c24">'+r.losses+'</td>'
+      +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'
+      +'<td>'+r.gamesWon+'</td>'
+      +'<td>'+r.gamesLost+'</td>'
+      +'<td style="color:#856404">'+r.byes+'</td>'
+      +'</tr>';
+  }
+  h += '</table></div>';
+
+  // Summary counts
+  var totalMatches=0, totalScored=0;
+  rows.forEach(function(r){ totalMatches+=r.total; totalScored+=r.gamesWon; });
+  if(totalMatches>0){
+    h += '<div style="margin-top:10px;font-size:.82rem;color:#666">'+
+      Math.round(totalMatches/2)+' matches recorded · '+totalScored+' total points scored this season</div>';
+  }
+
   return h+'</div>';
 }
 
@@ -818,21 +929,24 @@ function assignCourts(players,numCourts,ppCourt){
 function openPlayerModal(id){
   var p=(id!==null)?getPlayer(id):null, ratings=['2.0','2.5','3.0','3.5','4.0','4.5','5.0'], ustaOpts='';
   for(var i=0;i<ratings.length;i++) ustaOpts+='<option'+(p&&p.usta===ratings[i]?' selected':'')+'>'+ratings[i]+'</option>';
+  var curStatus=p?(p.memberStatus||'Active'):'Active';
+  var statusOpts=['Active','Inactive','Guest'].map(function(s){ return '<option'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
   showModal('<h3>'+(p?'Edit':'Add')+' Player</h3>'
     +'<label>Name</label><input id="m-name" value="'+(p?esc(p.name):'')+'" placeholder="Full name">'
     +'<label>USTA Rating</label><select id="m-usta">'+ustaOpts+'</select>'
-    +'<label>Fees Paid ($)</label><input id="m-fees" type="number" min="0" value="'+(p?p.fees||0:0)+'">'
+    +'<label>Member Status</label><select id="m-status">'+statusOpts+'</select>'
+    +'<label>Fee Paid ($)</label><input id="m-fees" type="number" min="0" value="'+(p?p.fees||0:0)+'">'
     +'<div class="modal-btns"><button class="btn btn-secondary" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-save">'+(p?'Save':'Add')+'</button></div>');
   byId('m-cancel').addEventListener('click',closeModal);
   byId('m-save').addEventListener('click',function(){
-    var name=byId('m-name').value.trim(), usta=byId('m-usta').value, fees=parseFloat(byId('m-fees').value)||0;
+    var name=byId('m-name').value.trim(), usta=byId('m-usta').value, fees=parseFloat(byId('m-fees').value)||0, memberStatus=byId('m-status').value||'Active';
     if(!name){ showToast('Name is required.'); return; }
-    if(id!==null){ var px=getPlayer(id); if(px){ px.name=name; px.usta=usta; px.fees=fees; } }
+    if(id!==null){ var px=getPlayer(id); if(px){ px.name=name; px.usta=usta; px.fees=fees; px.memberStatus=memberStatus; } }
     else {
       var used={};
       for(var i=0;i<S.players.length;i++) used[S.players[i].id]=true;
       var nid=1; while(used[nid]&&nid<1000) nid++;
-      S.players.push({id:nid,name:name,usta:usta,fees:fees});
+      S.players.push({id:nid,name:name,usta:usta,fees:fees,memberStatus:memberStatus});
     }
     save(); closeModal();
   });
@@ -843,9 +957,9 @@ function openSheetSync(){
   showModal('<h3>📋 Copy from .CSV</h3>'
     +'<div class="alert alert-info" style="margin-bottom:10px">'
     +'<strong>How to import:</strong><br>1. Open your CSV file in Excel or Google Sheets<br>2. Select all data including header row (Ctrl+A)<br>3. Copy (Ctrl+C)<br>4. Paste below and click Import<br><br>'
-    +'Column order: <strong>Player ID, Name, USTA Rating, Fees Paid</strong></div>'
+    +'Column order: <strong>Player ID, Name, USTA Rating, Member Status, Fee Paid</strong></div>'
     +'<label>Paste CSV Data</label>'
-    +'<textarea id="m-csv" rows="10" placeholder="Player ID&#9;Name&#9;USTA Rating&#9;Fees Paid&#10;1&#9;John Smith&#9;3.5&#9;150"></textarea>'
+    +'<textarea id="m-csv" rows="10" placeholder="Player ID&#9;Name&#9;USTA Rating&#9;Member Status&#9;Fee Paid&#10;1&#9;John Smith&#9;3.5&#9;Active&#9;150"></textarea>'
     +'<div class="modal-btns"><button class="btn btn-secondary" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-sync">Import</button></div>');
   byId('m-cancel').addEventListener('click',closeModal);
   byId('m-sync').addEventListener('click',function(){
@@ -873,11 +987,13 @@ function importRows(rows){
   var added=0,updated=0,skipped=0;
   for(var i=0;i<rows.length;i++){
     var row=rows[i]; if(row.length<2){ skipped++; continue; }
-    var pid=parseInt(row[0]),name=(row[1]||'').trim(),usta=(row[2]||'3.0').trim(),fees=parseFloat(row[3])||0;
+    var pid=parseInt(row[0]),name=(row[1]||'').trim(),usta=(row[2]||'3.0').trim();
+    var memberStatus=(row[3]||'Active').trim()||'Active';
+    var fees=parseFloat(row[4])||0;
     if(!pid||!name){ skipped++; continue; }
     var ex=getPlayer(pid);
-    if(ex){ ex.name=name; ex.usta=usta; ex.fees=fees; updated++; }
-    else { S.players.push({id:pid,name:name,usta:usta,fees:fees}); added++; }
+    if(ex){ ex.name=name; ex.usta=usta; ex.memberStatus=memberStatus; ex.fees=fees; updated++; }
+    else { S.players.push({id:pid,name:name,usta:usta,memberStatus:memberStatus,fees:fees}); added++; }
   }
   return{added:added,updated:updated,skipped:skipped};
 }
@@ -885,8 +1001,8 @@ function importRows(rows){
 // ── CSV EXPORT ─────────────────────────────────────────
 function exportCSV(){
   if(!S.players.length){ showToast('No players to export.'); return; }
-  var rows=[['Player ID','Name','USTA Rating','Fees Paid']];
-  for(var i=0;i<S.players.length;i++){ var p=S.players[i]; rows.push([fmtId(p.id),p.name,p.usta,p.fees||0]); }
+  var rows=[['Player ID','Name','USTA Rating','Member Status','Fee Paid']];
+  for(var i=0;i<S.players.length;i++){ var p=S.players[i]; rows.push([fmtId(p.id),p.name,p.usta,p.memberStatus||'Active',p.fees||0]); }
   var csv='';
   for(var i=0;i<rows.length;i++){
     var cols=[]; for(var j=0;j<rows[i].length;j++) cols.push('"'+String(rows[i][j]).replace(/"/g,'""')+'"');
@@ -898,6 +1014,77 @@ function exportCSV(){
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     showToast('Roster exported!');
   }catch(e){ showToast('Export not supported in this browser.'); }
+}
+
+
+// ── STATS CSV EXPORT ───────────────────────────────────
+function exportStats(){
+  var season = S.currentSeason;
+  if(!S.players.length){ showToast('No players to export.'); return; }
+  var rows=[['Player ID','Name','Season','Matches Won','Matches Lost','Games Won','Games Lost','Byes']];
+  for(var i=0;i<S.players.length;i++){
+    var p=S.players[i];
+    var st=getPlayerStats(p.id,season);
+    var bc=(S.byeCounts[p.id]||{})[season]||0;
+    rows.push([fmtId(p.id),p.name,season,st.wins,st.losses,st.gamesWon,st.gamesLost,bc]);
+  }
+  var csv='';
+  for(var i=0;i<rows.length;i++){
+    var cols=[]; for(var j=0;j<rows[i].length;j++) cols.push('"'+String(rows[i][j]).replace(/"/g,'""')+'"');
+    csv+=cols.join(',')+'\r\n';
+  }
+  try{
+    var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download='dmv_tennis_stats_'+season.toLowerCase()+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('Stats exported!');
+  }catch(e){ showToast('Export not supported in this browser.'); }
+}
+
+// ── STATS CSV IMPORT ───────────────────────────────────
+function openImportStats(){
+  var season=S.currentSeason;
+  var info='<h3>📋 Import Stats CSV</h3>'
+    +'<div class="alert alert-info" style="margin-bottom:10px">'
+    +'<strong>How to import:</strong><br>1. Use a previously exported Stats CSV<br>'
+    +'2. Select all including header row (Ctrl+A)<br>3. Copy (Ctrl+C) and paste below<br><br>'
+    +'Column order: <strong>Player ID, Name, Season, Matches Won, Matches Lost, Games Won, Games Lost, Byes</strong><br>'
+    +'<em>Only rows matching the current season ('+esc(season)+') will be imported.</em>'
+    +'</div>'
+    +'<label>Paste CSV Data</label>'
+    +'<textarea id="m-stats-csv" rows="10" placeholder="Player ID,Name,Season,Matches Won,Matches Lost,Games Won,Games Lost,Byes"></textarea>'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-stats-import">Import</button>'
+    +'</div>';
+  showModal(info);
+  byId('m-cancel').addEventListener('click',closeModal);
+  byId('m-stats-import').addEventListener('click',function(){
+    var raw=byId('m-stats-csv').value.trim();
+    if(!raw){ showToast('Please paste your CSV data.'); return; }
+    var firstLine=raw.split('\n')[0];
+    var delim=firstLine.indexOf('\t')>=0?'\t':',';
+    var lines=raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
+    var added=0,skipped=0;
+    if(!S.playerStats) S.playerStats={};
+    for(var i=1;i<lines.length;i++){
+      var line=lines[i].trim(); if(!line){ skipped++; continue; }
+      var cols=line.split(delim);
+      for(var j=0;j<cols.length;j++) cols[j]=cols[j].trim().replace(/^"|"$/g,'');
+      var pid=parseInt(cols[0]), rowSeason=(cols[2]||'').trim();
+      var wins=parseInt(cols[3])||0, losses=parseInt(cols[4])||0;
+      var gw=parseInt(cols[5])||0, gl=parseInt(cols[6])||0;
+      var byes=parseInt(cols[7])||0;
+      if(!pid||rowSeason!==season){ skipped++; continue; }
+      if(!S.playerStats[pid]) S.playerStats[pid]={};
+      S.playerStats[pid][season]={wins:wins,losses:losses,gamesWon:gw,gamesLost:gl};
+      if(!S.byeCounts[pid]) S.byeCounts[pid]={};
+      S.byeCounts[pid][season]=byes;
+      added++;
+    }
+    save(); closeModal();
+    showToast('Stats imported! '+added+' records updated, '+skipped+' skipped.');
+  });
 }
 
 // ── AUTH ───────────────────────────────────────────────
