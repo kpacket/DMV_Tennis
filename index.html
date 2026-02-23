@@ -417,7 +417,7 @@ function render(){
 function userHTML(){
   var upcomingDate=getUpcoming();
   var upSess=upcomingDate?getSession(upcomingDate):null;
-  var showCaptainTab=upSess&&upSess.teamBattle&&S.captainPid&&(upSess.captainA===S.captainPid||upSess.captainB===S.captainPid);
+  var showCaptainTab=upSess&&upSess.teamBattle;
   var showPCTab=upSess&&upSess.playersChoice;
   var h='<div class="tabs">'
     +'<button class="tab'+(S.userTab==='rsvp'?' active':'')+'" data-utab="rsvp">RSVP</button>'
@@ -438,6 +438,59 @@ function bindUser(){
   if(rs){ rs.addEventListener('change',renderRsvpStatus); rs.addEventListener('input',renderRsvpStatus); }
   var capLogin=byId('captain-login-btn'); if(capLogin) capLogin.addEventListener('click',openCaptainLogin);
   var pcSubmit=byId('pc-submit-btn'); if(pcSubmit) pcSubmit.addEventListener('click',submitPlayersChoice);
+
+  // Captain team management
+  var capAddBtn=byId('cap-add-btn');
+  if(capAddBtn){
+    var capSel=byId('cap-add-player-sel');
+    // Show/hide cross-team warning on selection change
+    if(capSel){
+      capSel.addEventListener('change',function(){
+        var pid=parseInt(capSel.value);
+        var warn=byId('cap-add-warn');
+        if(!warn||!pid) { if(warn) warn.style.display='none'; return; }
+        var date=getUpcoming(); if(!date) return;
+        var sess=getSession(date);
+        var isCapA=(S.captainPid===sess.captainA);
+        var otherTeam=isCapA?(sess.teamB||[]):(sess.teamA||[]);
+        warn.style.display=(otherTeam.indexOf(pid)>=0)?'block':'none';
+      });
+    }
+    capAddBtn.addEventListener('click',function(){
+      var pid=capSel?parseInt(capSel.value):0;
+      if(!pid){ showToast('Please select a player.'); return; }
+      var date=getUpcoming(); if(!date) return;
+      var sess=getSession(date);
+      var isCapA=(S.captainPid===sess.captainA);
+      var isCapB=(S.captainPid===sess.captainB);
+      if(!isCapA&&!isCapB){ showToast('Not a captain.'); return; }
+      var otherTeam=isCapA?(sess.teamB||[]):(sess.teamA||[]);
+      if(isCapA){
+        if(!sess.teamA) sess.teamA=[];
+        if(sess.teamA.indexOf(pid)<0) sess.teamA.push(pid);
+      } else {
+        if(!sess.teamB) sess.teamB=[];
+        if(sess.teamB.indexOf(pid)<0) sess.teamB.push(pid);
+      }
+      var wasOnOtherTeam=otherTeam.indexOf(pid)>=0;
+      S.sessions[date]=sess; save();
+      showToast('Player added!'+(wasOnOtherTeam?' (Note: they are also on the other team)':''));
+      render();
+    });
+  }
+  // Captain remove player
+  document.querySelectorAll('[data-remove-pid]').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var pid=parseInt(btn.dataset.removePid);
+      var date=getUpcoming(); if(!date) return;
+      var sess=getSession(date);
+      var isCapA=(S.captainPid===sess.captainA);
+      if(isCapA){ sess.teamA=(sess.teamA||[]).filter(function(id){ return id!==pid; }); }
+      else { sess.teamB=(sess.teamB||[]).filter(function(id){ return id!==pid; }); }
+      S.sessions[date]=sess; save();
+      showToast('Player removed.'); render();
+    });
+  });
   bindScoreButtons(); bindHighlightSelect();
 }
 
@@ -582,6 +635,20 @@ function scheduleHTML(isAdmin){
 function roundsHTML(sess,date,hid){
   if(!sess||!sess.assignments||!Array.isArray(sess.assignments.rounds)) return '';
   var scores=sess.scores||{}, out='', rounds=sess.assignments.rounds;
+  var noByePids=sess.noByePids||[];
+  var lockedTeams=sess.lockedTeams||[];
+  // Build a set of all locked player ids
+  var lockedPidSet={};
+  for(var li=0;li<lockedTeams.length;li++) for(var lj=0;lj<lockedTeams[li].length;lj++) lockedPidSet[lockedTeams[li][lj]]=true;
+  // Helper: is this team a locked team?
+  function isLockedTeam(team){
+    if(!team||team.length<2) return false;
+    for(var li=0;li<lockedTeams.length;li++){
+      var lt=lockedTeams[li];
+      if(lt.length===team.length&&team.every(function(pid){ return lt.indexOf(pid)>=0; })) return true;
+    }
+    return false;
+  }
   for(var ri=0;ri<rounds.length;ri++){
     var round=rounds[ri]; if(!round||!Array.isArray(round.courts)) continue;
     out+='<div class="round-block"><div class="round-title">Round '+(ri+1)+'</div><div class="courts-row">';
@@ -598,12 +665,14 @@ function roundsHTML(sess,date,hid){
         var teamScore = sc ? (ti===0 ? sc.t1 : sc.t2) : null;
         var otherScore = sc ? (ti===0 ? sc.t2 : sc.t1) : null;
         var isWinner = sc && parseInt(teamScore) > parseInt(otherScore);
-        out+='<div class="team"><div class="team-row"><div class="team-label" style="margin:0">Team '+(ti+1)+'</div>';
+        var teamLocked = isLockedTeam(team);
+        out+='<div class="team"><div class="team-row"><div class="team-label" style="margin:0">Team '+(ti+1)+(teamLocked?' 🔒':'')+'</div>';
         out+='<span class="team-score'+(sc ? (isWinner ? ' winner' : '') : ' empty')+'">'+(sc ? esc(teamScore) : '—')+'</span>';
         out+='</div><div style="margin-top:4px">';
         for(var pi=0;pi<team.length;pi++){
           var pid2=team[pi], tp=getPlayer(pid2);
-          out+='<span class="player-chip'+(pid2===hid?' hl':'')+'">'+fmtId(pid2)+' '+(tp?esc(tp.name):'?')+'</span>';
+          var earlyLeave=noByePids.indexOf(pid2)>=0;
+          out+='<span class="player-chip'+(pid2===hid?' hl':'')+'">'+(earlyLeave?'⚡ ':'')+fmtId(pid2)+' '+(tp?esc(tp.name):'?')+'</span>';
         }
         out+='</div></div>';
         if(ti===0&&court.teams.length>1) out+='<div class="vs">VS</div>';
@@ -1103,11 +1172,18 @@ function openAutoAssignOptions(){
     '<div style="margin-top:8px"><label style="font-size:.8rem">Add locked team ('+half+' players):</label>'+addLockedSelects()+'</div>'+
     '</div>';
 
-  // No-bye section
+  // No-bye section (early leave protection - multi-select)
   body+='<div style="margin-bottom:16px">'+
-    '<div style="font-weight:700;margin-bottom:6px">⚡ Never sit out (leave early protection)</div>'+
-    '<div style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px">'+noByeChecks()+'</div>'+
-    '</div>';
+    '<div style="font-weight:700;margin-bottom:4px">⚡ Early Leave Protection</div>'+
+    '<div style="font-size:.8rem;color:#555;margin-bottom:8px">Selected players will never sit out a round. Tap to toggle.</div>'+
+    '<div id="no-bye-btns" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid #eee;border-radius:8px">';
+  for(var i=0;i<inP.length;i++){
+    var checked=noByePids.indexOf(inP[i].id)>=0;
+    body+='<button type="button" class="no-bye-toggle-btn" data-pid="'+inP[i].id+'" style="padding:5px 12px;border-radius:20px;border:2px solid '+(checked?'#e67e00':'#ccc')+';background:'+(checked?'#fff3cd':'#fff')+';color:'+(checked?'#7d4a00':'#444')+';font-weight:'+(checked?'700':'400')+';font-size:.82rem;cursor:pointer;transition:all .15s">'+
+      (checked?'⚡ ':'')+fmtId(inP[i].id)+' '+esc(inP[i].name)+
+      '</button>';
+  }
+  body+='</div></div>';
 
   body+='<div class="modal-btns">'+
     '<button class="btn btn-secondary" id="m-cancel">Cancel</button>'+
@@ -1118,18 +1194,36 @@ function openAutoAssignOptions(){
 
   byId('m-cancel').addEventListener('click',closeModal);
 
-  // Delete locked team
-  document.querySelectorAll('.locked-del-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      var li=parseInt(btn.dataset.li);
-      lockedTeams.splice(li,1);
-      byId('locked-rows-wrap').innerHTML=lockedRows();
-      // re-bind delete buttons
-      document.querySelectorAll('.locked-del-btn').forEach(function(b2){
-        b2.addEventListener('click',arguments.callee);
+  // Toggle early leave protection buttons
+  function bindNoByeToggleBtns(){
+    document.querySelectorAll('.no-bye-toggle-btn').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var pid=parseInt(btn.dataset.pid);
+        var idx=noByePids.indexOf(pid);
+        if(idx>=0){ noByePids.splice(idx,1); }
+        else { noByePids.push(pid); }
+        var active=noByePids.indexOf(pid)>=0;
+        btn.style.border='2px solid '+(active?'#e67e00':'#ccc');
+        btn.style.background=active?'#fff3cd':'#fff';
+        btn.style.color=active?'#7d4a00':'#444';
+        btn.style.fontWeight=active?'700':'400';
+        btn.textContent=(active?'⚡ ':'')+fmtId(pid)+' '+(getPlayer(pid)?esc(getPlayer(pid).name):fmtId(pid));
       });
     });
-  });
+  }
+  bindNoByeToggleBtns();
+  function bindLockedDelBtns(){
+    document.querySelectorAll('.locked-del-btn').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var li=parseInt(btn.dataset.li);
+        lockedTeams.splice(li,1);
+        byId('locked-rows-wrap').innerHTML=lockedRows();
+        bindLockedDelBtns();
+        bindNoByeToggleBtns();
+      });
+    });
+  }
+  bindLockedDelBtns();
 
   // Add locked team
   byId('lt-add-btn').addEventListener('click',function(){
@@ -1142,15 +1236,15 @@ function openAutoAssignOptions(){
     if(new Set(ids).size!==ids.length){ showToast('Please select different players.'); return; }
     lockedTeams.push(ids);
     byId('locked-rows-wrap').innerHTML=lockedRows();
+    bindLockedDelBtns();
     for(var si4=0;si4<half;si4++){ var selEl2=byId('lt-p'+si4); if(selEl2) selEl2.value=''; }
   });
 
   // Save
   byId('aa-opts-save').addEventListener('click',function(){
-    var newNoByePids=[];
-    document.querySelectorAll('.no-bye-chk:checked').forEach(function(c){ newNoByePids.push(parseInt(c.value)); });
+    // noByePids is already tracked in the local array via toggle buttons
     sess.lockedTeams=lockedTeams;
-    sess.noByePids=newNoByePids;
+    sess.noByePids=noByePids;
     S.sessions[date]=sess; save(); closeModal(); showToast('AutoAssign options saved!');
   });
 }
@@ -1158,7 +1252,19 @@ function openAutoAssignOptions(){
 // ── ASSIGNMENT ENGINE ──────────────────────────────────
 function generateAssignments(){
   var date=S.selectedDate; if(!date){ showToast('No date selected.'); return; }
-  var sess=getSession(date), inP=getInPlayers(date), ppCourt=sess.type==='singles'?2:4;
+  var sess=getSession(date);
+  // Dispatch to mode-specific generators
+  if(sess.teamBattle){
+    if(!(sess.teamA&&sess.teamA.length)&&!(sess.teamB&&sess.teamB.length)){
+      showToast('Set up teams first using the ⚔️ Setup Team Battle button.');
+      return;
+    }
+    generateTeamBattleAssignments(date, sess);
+    showToast('Team Battle assignments generated!');
+    render();
+    return;
+  }
+  var inP=getInPlayers(date), ppCourt=sess.type==='singles'?2:4;
   if(inP.length<ppCourt){ showToast('Need at least '+ppCourt+' players marked IN.'); return; }
   var numCourts=sess.courts, mpp=sess.matchesPerPlayer;
   var playPerRound=Math.min(inP.length,numCourts*ppCourt), activeCourts=Math.floor(playPerRound/ppCourt);
@@ -1192,8 +1298,14 @@ function generateAssignments(){
   }
 
   var allRounds=[];
-  // For rotation: track last-round partners per player
+  // Track partner/opponent history to avoid rematches
   var lastPartner={};
+  var opponentHistory={}; // opponentHistory[pid][oppPid] = number of times faced
+  var partnerHistory={};  // partnerHistory[pid][partPid] = number of times partnered
+  for(var i=0;i<sorted.length;i++){
+    opponentHistory[sorted[i].id]={};
+    partnerHistory[sorted[i].id]={};
+  }
 
   for(var r=0;r<totalRounds;r++){
     // --- Determine byes (never put noByePids on bye if avoidable) ---
@@ -1230,21 +1342,35 @@ function generateAssignments(){
 
     var roundCourts;
     if(!rotate){
-      // Same partner mode — same pairs throughout
-      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, null);
+      // Same partner mode — same pairs throughout, but avoid opponent rematches
+      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, null, opponentHistory, partnerHistory);
     } else {
-      // Rotate mode — try to give each player a different partner than last round
-      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, lastPartner);
-      // Update lastPartner tracking
-      for(var ci=0;ci<roundCourts.length;ci++){
-        var ct=roundCourts[ci];
-        for(var ti=0;ti<ct.teams.length;ti++){
-          var team=ct.teams[ti];
-          for(var pi=0;pi<team.length;pi++){
-            for(var pi2=0;pi2<team.length;pi2++){
-              if(pi!==pi2) lastPartner[team[pi]]=team[pi2];
-            }
-          }
+      // Rotate mode — try to give each player a different partner AND opponent than previous rounds
+      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, lastPartner, opponentHistory, partnerHistory);
+    }
+    // Update history tracking for next round
+    for(var ci=0;ci<roundCourts.length;ci++){
+      var ct=roundCourts[ci];
+      var t0=ct.teams[0]||[], t1=ct.teams[1]||[];
+      // Partner history
+      for(var pi=0;pi<t0.length;pi++) for(var pi2=0;pi2<t0.length;pi2++){
+        if(pi!==pi2){ partnerHistory[t0[pi]][t0[pi2]]=(partnerHistory[t0[pi]][t0[pi2]]||0)+1; }
+      }
+      for(var pi=0;pi<t1.length;pi++) for(var pi2=0;pi2<t1.length;pi2++){
+        if(pi!==pi2){ partnerHistory[t1[pi]][t1[pi2]]=(partnerHistory[t1[pi]][t1[pi2]]||0)+1; }
+      }
+      // Opponent history
+      for(var pi=0;pi<t0.length;pi++) for(var pi2=0;pi2<t1.length;pi2++){
+        opponentHistory[t0[pi]][t1[pi2]]=(opponentHistory[t0[pi]][t1[pi2]]||0)+1;
+        opponentHistory[t1[pi2]][t0[pi]]=(opponentHistory[t1[pi2]][t0[pi]]||0)+1;
+      }
+      // Update lastPartner for rotate mode
+      if(rotate){
+        for(var pi=0;pi<t0.length;pi++) for(var pi2=0;pi2<t0.length;pi2++){
+          if(pi!==pi2) lastPartner[t0[pi]]=t0[pi2];
+        }
+        for(var pi=0;pi<t1.length;pi++) for(var pi2=0;pi2<t1.length;pi2++){
+          if(pi!==pi2) lastPartner[t1[pi]]=t1[pi2];
         }
       }
     }
@@ -1261,7 +1387,9 @@ function generateAssignments(){
   S.sessions[date]=sess; save(); showToast('Assignments generated!');
 }
 
-function assignCourtsWithLocked(playing, numCourts, ppCourt, lockedTeams, lastPartner){
+function assignCourtsWithLocked(playing, numCourts, ppCourt, lockedTeams, lastPartner, opponentHistory, partnerHistory){
+  opponentHistory = opponentHistory || {};
+  partnerHistory = partnerHistory || {};
   // Build "units" — locked teams travel as one unit, singles as individuals
   var units=[], usedInUnit={};
   for(var li=0;li<lockedTeams.length;li++){
@@ -1278,16 +1406,16 @@ function assignCourtsWithLocked(playing, numCourts, ppCourt, lockedTeams, lastPa
   }
   units.sort(function(a,b){ return b.avgUsta-a.avgUsta; });
 
-  // If rotating, shuffle non-locked singles to avoid same partners
-  if(lastPartner){
+  // If rotating or same-partner mode, shuffle free units to vary opponents
+  if(lastPartner !== null || opponentHistory){
     var lockedUnits=units.filter(function(u){ return u.locked; });
     var freeUnits=units.filter(function(u){ return !u.locked; });
-    // Fisher-Yates shuffle free units for partner variety
+    // Fisher-Yates shuffle free units for variety
     for(var i=freeUnits.length-1;i>0;i--){
       var j=Math.floor(Math.random()*(i+1));
       var tmp=freeUnits[i]; freeUnits[i]=freeUnits[j]; freeUnits[j]=tmp;
     }
-    // Re-sort by usta within shuffle to keep balance somewhat
+    // Re-sort by usta to keep balance
     freeUnits.sort(function(a,b){ return b.avgUsta-a.avgUsta; });
     units=lockedUnits.concat(freeUnits);
   }
@@ -1296,18 +1424,53 @@ function assignCourtsWithLocked(playing, numCourts, ppCourt, lockedTeams, lastPa
   var courts=[];
   var half=Math.floor(units.length/2);
   var top=units.slice(0,half), bot=units.slice(half).reverse();
-  var pairsPerCourt=ppCourt/2; // 2 for doubles, 1 for singles
+  var pairsPerCourt=ppCourt/2;
 
-  // Build team slots
-  var teams=[];
-  for(var i=0;i<Math.min(top.length,bot.length);i++){
-    teams.push([top[i],bot[i]]);
+  // Build all possible unit pairings (top[i] partnered with adjacent top to form a team)
+  // For doubles: pair consecutive units within top half as team1, consecutive in bot half as team2
+  // Then choose court pairings that minimize opponent repeats
+
+  // Build raw team pairs: each "team" is 2 units merged for doubles, 1 unit for singles
+  var topTeams=[], botTeams=[];
+  if(ppCourt===4){
+    // Pair consecutive units into teams of 2
+    for(var i=0;i+1<top.length;i+=2){
+      var ids=top[i].ids.concat(top[i+1].ids);
+      // Prefer partner pairs with fewest prior encounters
+      var score=0;
+      for(var a=0;a<top[i].ids.length;a++) for(var b=0;b<top[i+1].ids.length;b++)
+        score+=(partnerHistory[top[i].ids[a]]||{})[top[i+1].ids[b]]||0;
+      topTeams.push({ids:ids, score:score});
+    }
+    for(var i=0;i+1<bot.length;i+=2){
+      var ids=bot[i].ids.concat(bot[i+1].ids);
+      var score=0;
+      for(var a=0;a<bot[i].ids.length;a++) for(var b=0;b<bot[i+1].ids.length;b++)
+        score+=(partnerHistory[bot[i].ids[a]]||{})[bot[i+1].ids[b]]||0;
+      botTeams.push({ids:ids, score:score});
+    }
+  } else {
+    // Singles: each unit is already a single player
+    for(var i=0;i<top.length;i++) topTeams.push({ids:top[i].ids, score:0});
+    for(var i=0;i<bot.length;i++) botTeams.push({ids:bot[i].ids, score:0});
   }
-  for(var i=0;i<numCourts&&i<Math.floor(teams.length/2);i++){
-    var t1=teams[i], t2=teams[teams.length-1-i];
-    var team1=[],team2=[];
-    for(var j=0;j<t1.length;j++) for(var k=0;k<t1[j].ids.length;k++) team1.push(t1[j].ids[k]);
-    for(var j=0;j<t2.length;j++) for(var k=0;k<t2[j].ids.length;k++) team2.push(t2[j].ids[k]);
+
+  // Now pair topTeams vs botTeams to form courts, minimizing opponent repeats
+  // Simple greedy: for each top team, find best bot team match with fewest prior opponent encounters
+  var usedBot={};
+  for(var i=0;i<numCourts&&i<topTeams.length;i++){
+    var tTeam=topTeams[i];
+    var bestBot=-1, bestScore=Infinity;
+    for(var j=0;j<botTeams.length;j++){
+      if(usedBot[j]) continue;
+      var oppScore=0;
+      for(var a=0;a<tTeam.ids.length;a++) for(var b=0;b<botTeams[j].ids.length;b++)
+        oppScore+=(opponentHistory[tTeam.ids[a]]||{})[botTeams[j].ids[b]]||0;
+      if(oppScore<bestScore){ bestScore=oppScore; bestBot=j; }
+    }
+    if(bestBot<0) break;
+    usedBot[bestBot]=true;
+    var team1=tTeam.ids, team2=botTeams[bestBot].ids;
     if(team1.length>0&&team2.length>0) courts.push({teams:[team1,team2]});
   }
   return courts;
@@ -1760,7 +1923,7 @@ function openTeamBattleSetup(){
     +'<div style="max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:6px">'+teamCheckboxes(teamB,'tb')+'</div>'
     +'</div>'
     +'</div>'
-    +'<div class="alert alert-info" style="margin-top:10px;font-size:.82rem">Players can be on both teams or neither — checkboxes are independent.</div>'
+    +'<div class="alert alert-info" style="margin-top:10px;font-size:.82rem">Players can be on both teams or neither — checkboxes are independent. Captains can also add players from their own view. After saving, use <strong>"Generate Court Assignment"</strong> to create the schedule.</div>'
     +'<div class="modal-btns">'
     +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
     +'<button class="btn btn-primary" id="m-tb-save">Save & Generate</button>'
@@ -1775,12 +1938,17 @@ function openTeamBattleSetup(){
     var newCapA=parseInt(byId('cap-a-sel').value)||null;
     var newCapB=parseInt(byId('cap-b-sel').value)||null;
     if(!newTeamA.length||!newTeamB.length){ showToast('Each team needs at least one player.'); return; }
+    // Warn about cross-team players
+    var crossPlayers=newTeamA.filter(function(id){ return newTeamB.indexOf(id)>=0; });
+    if(crossPlayers.length){
+      var names=crossPlayers.map(function(id){ var p=getPlayer(id); return p?p.name:fmtId(id); }).join(', ');
+      showToast('⚠️ Warning: '+names+' is on both teams!');
+    }
     sess.teamA=newTeamA; sess.teamB=newTeamB;
     sess.captainA=newCapA; sess.captainB=newCapB;
     S.sessions[date]=sess; save();
-    generateTeamBattleAssignments(date, sess);
     closeModal();
-    showToast('Team Battle saved & assignments generated!');
+    showToast('Team Battle saved! Click "Generate Court Assignment" to create schedule.');
   });
 }
 
@@ -1882,28 +2050,56 @@ function captainTeamHTML(){
   if(!isCapA&&!isCapB) return '<div class="card"><div class="alert alert-warn">You are not a captain for this session. <button class="btn btn-secondary btn-sm" id="captain-login-btn">Switch Captain</button></div></div>';
 
   var myTeam=isCapA?(sess.teamA||[]):(sess.teamB||[]);
+  var otherTeam=isCapA?(sess.teamB||[]):(sess.teamA||[]);
   var teamLabel=isCapA?'🔵 Team A':'🔴 Team B';
   var teamColor=isCapA?'#1e40af':'#991b1b';
   var teamBorder=isCapA?'#1e40af':'#991b1b';
+  var chipClass=isCapA?'team-a-chip':'team-b-chip';
+
+  var inP=getInPlayers(date);
 
   var h='<div class="card"><h2>⚔️ '+teamLabel+'</h2>';
-  h+='<div style="font-size:.85rem;color:#555;margin-bottom:12px">Managing as captain: <strong>'+esc((getPlayer(S.captainPid)||{name:'?'}).name)+'</strong>'
+  h+='<div style="font-size:.85rem;color:#555;margin-bottom:12px">Captain: <strong>'+esc((getPlayer(S.captainPid)||{name:'?'}).name)+'</strong>'
     +' <button class="btn btn-secondary btn-sm" id="captain-login-btn" style="margin-left:8px">Switch</button></div>';
 
-  // Show my team roster
-  h+='<div style="border:2px solid '+teamBorder+';border-radius:8px;padding:12px;margin-bottom:12px">';
-  h+='<div style="font-weight:700;color:'+teamColor+';margin-bottom:8px">My Team ('+myTeam.length+' players)</div>';
-  if(!myTeam.length){ h+='<div style="color:#aaa;font-size:.85rem">No players assigned yet.</div>'; }
-  else {
+  // Team member management section
+  h+='<div style="border:2px solid '+teamBorder+';border-radius:8px;padding:12px;margin-bottom:14px">';
+  h+='<div style="font-weight:700;color:'+teamColor+';margin-bottom:8px">My Team Roster ('+myTeam.length+' players)</div>';
+
+  // Current members
+  if(myTeam.length){
+    h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
     for(var i=0;i<myTeam.length;i++){
-      var p=getPlayer(myTeam[i]);
+      var mp=getPlayer(myTeam[i]);
       var isCap=(myTeam[i]===S.captainPid);
-      h+='<span class="'+(isCapA?'team-a-chip':'team-b-chip')+'">'+(isCap?'👑 ':'')+esc(p?p.name:fmtId(myTeam[i]))+'</span>';
+      h+='<span class="'+chipClass+'" style="display:inline-flex;align-items:center;gap:4px">'+(isCap?'👑 ':'')+esc(mp?mp.name:fmtId(myTeam[i]))+
+        (!isCap?'<button type="button" data-remove-pid="'+myTeam[i]+'" style="background:none;border:none;cursor:pointer;color:inherit;font-size:.75rem;padding:0;margin-left:2px">✕</button>':'')+'</span>';
+    }
+    h+='</div>';
+  } else {
+    h+='<div style="color:#aaa;font-size:.85rem;margin-bottom:10px">No players assigned yet.</div>';
+  }
+
+  // Add player section
+  h+='<div style="margin-top:8px">';
+  h+='<label style="font-size:.8rem;font-weight:600">Add Player to Team</label>';
+  h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+  h+='<select id="cap-add-player-sel" style="flex:1;padding:7px;border-radius:6px;border:1.5px solid #ccc;font-size:.88rem">';
+  h+='<option value="">— select player —</option>';
+  for(var i=0;i<inP.length;i++){
+    var alreadyMine=myTeam.indexOf(inP[i].id)>=0;
+    if(!alreadyMine){
+      var alreadyOther=otherTeam.indexOf(inP[i].id)>=0;
+      h+='<option value="'+inP[i].id+'"'+(alreadyOther?' style="color:#991b1b;font-weight:700"':'')+'>'+fmtId(inP[i].id)+' '+esc(inP[i].name)+(alreadyOther?' ⚠️ (other team)':'')+'</option>';
     }
   }
+  h+='</select>';
+  h+='<button class="btn btn-green btn-sm" id="cap-add-btn">+ Add</button>';
   h+='</div>';
+  h+='<div id="cap-add-warn" style="margin-top:6px;color:#856404;font-size:.82rem;display:none">⚠️ This player is already on the other team. They will play for both teams if added.</div>';
+  h+='</div></div>';
 
-  // Show assignments for my team
+  // Show assignments if generated
   if(sess.assignments&&sess.assignments.rounds){
     h+='<div style="font-weight:700;margin-bottom:8px">Today\'s Matches</div>';
     var rounds=sess.assignments.rounds;
@@ -1913,7 +2109,6 @@ function captainTeamHTML(){
       var myPlayed=false;
       for(var ci=0;ci<round.courts.length;ci++){
         var court=round.courts[ci];
-        // Check if any of my team is on this court
         var myTeamOnCourt=false;
         for(var ti=0;ti<court.teams.length;ti++){
           for(var pi=0;pi<court.teams[ti].length;pi++){
@@ -1946,14 +2141,13 @@ function captainTeamHTML(){
         h+='</div>';
       }
       if(!myPlayed){
-        // Check if team is in byes
         var inBye=false;
         if(round.byes) for(var pi=0;pi<myTeam.length;pi++) if(round.byes.indexOf(myTeam[pi])>=0){ inBye=true; break; }
         h+='<div style="color:#856404;font-size:.82rem;padding:4px 0">'+(inBye?'⏸ Sitting out this round':'No courts assigned')+'</div>';
       }
     }
   } else {
-    h+='<div class="alert alert-info">Assignments not yet generated by admin.</div>';
+    h+='<div class="alert alert-info">Assignments will be generated by admin once teams are set.</div>';
   }
 
   h+='</div>';
