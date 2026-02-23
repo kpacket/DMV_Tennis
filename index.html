@@ -91,6 +91,9 @@ td{padding:8px;border-bottom:1px solid #eee;vertical-align:middle}
 .sticky-table-wrap table{border-collapse:separate;border-spacing:0}
 .sticky-table-wrap th{position:sticky;top:0;z-index:2;box-shadow:0 2px 4px rgba(0,0,0,.12)}
 .pts-badge{background:#1a5c2a;color:#fff;border-radius:14px;padding:3px 10px;font-size:.82rem;font-weight:700}
+.team-a-chip{background:#dbeafe;color:#1e40af;border-radius:14px;padding:3px 10px;font-size:.82rem;font-weight:600;display:inline-block;margin:2px}
+.team-b-chip{background:#fee2e2;color:#991b1b;border-radius:14px;padding:3px 10px;font-size:.82rem;font-weight:600;display:inline-block;margin:2px}
+.captain-crown{font-size:.8rem;margin-right:2px}
 .badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:700}
 .badge-in{background:#d4edda;color:#155724}
 .badge-out{background:#f8d7da;color:#721c24}
@@ -238,6 +241,7 @@ var S = {
   sessions: {},
   byeCounts: {},
   playerStats: {},
+  captainPid: null,
   pointsConfig: {matchWin:3, gameWin:1, attendance:1},
   isAdmin: false,
   selectedDate: null,
@@ -255,6 +259,7 @@ try {
   if(localPrefs.userTab) S.userTab = localPrefs.userTab;
   if(localPrefs.selectedDate) S.selectedDate = localPrefs.selectedDate;
   if(localPrefs.currentSeason) S.currentSeason = localPrefs.currentSeason;
+  if(localPrefs.captainPid) S.captainPid = parseInt(localPrefs.captainPid)||null;
 } catch(e){}
 
 function saveLocalPrefs(){
@@ -263,6 +268,7 @@ function saveLocalPrefs(){
       isAdmin: S.isAdmin,
       adminTab: S.adminTab,
       userTab: S.userTab,
+      captainPid: S.captainPid||null,
       selectedDate: S.selectedDate,
       currentSeason: S.currentSeason
     }));
@@ -342,8 +348,8 @@ function fmtDate(d){
   catch(e){ return d||''; }
 }
 function getSession(date){
-  if(!date) return {type:'doubles',rotatePartners:true,manualPartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
-  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:true,manualPartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!date) return {type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
   var sess=S.sessions[date];
   if(!sess.scores) sess.scores={};
   if(!sess.rsvps) sess.rsvps={};
@@ -397,12 +403,18 @@ function render(){
 // USER VIEW
 // ══════════════════════════════════════════════════════
 function userHTML(){
+  var upcomingDate=getUpcoming();
+  var upSess=upcomingDate?getSession(upcomingDate):null;
+  var showCaptainTab=upSess&&upSess.teamBattle&&S.captainPid&&(upSess.captainA===S.captainPid||upSess.captainB===S.captainPid);
+  var showPCTab=upSess&&upSess.playersChoice;
   var h='<div class="tabs">'
     +'<button class="tab'+(S.userTab==='rsvp'?' active':'')+'" data-utab="rsvp">RSVP</button>'
-    +'<button class="tab'+(S.userTab==='schedule'?' active':'')+'" data-utab="schedule">Court Schedule</button>'
+    +'<button class="tab'+(S.userTab==='schedule'?' active':'')+'" data-utab="schedule">Schedule</button>'
+    +(showCaptainTab?'<button class="tab'+(S.userTab==='captain'?' active':'')+'" data-utab="captain">⚔️ My Team</button>':'')
+    +(showPCTab?'<button class="tab'+(S.userTab==='pchoice'?' active':'')+'" data-utab="pchoice">🎾 My Court</button>':'')
     +'<button class="tab'+(S.userTab==='stats'?' active':'')+'" data-utab="stats">Stats</button>'
     +'</div>';
-  h+=(S.userTab==='rsvp')?rsvpHTML():(S.userTab==='schedule')?scheduleHTML(false):byesHTML();
+  h+=(S.userTab==='rsvp')?rsvpHTML():(S.userTab==='captain')?captainTeamHTML():(S.userTab==='pchoice')?playersChoiceUserHTML():(S.userTab==='schedule')?scheduleHTML(false):byesHTML();
   return h;
 }
 function bindUser(){
@@ -412,6 +424,8 @@ function bindUser(){
   var lb=byId('rsvp-lookup-btn'); if(lb) lb.addEventListener('click',renderRsvpStatus);
   var rs=byId('rsvp-sel');
   if(rs){ rs.addEventListener('change',renderRsvpStatus); rs.addEventListener('input',renderRsvpStatus); }
+  var capLogin=byId('captain-login-btn'); if(capLogin) capLogin.addEventListener('click',openCaptainLogin);
+  var pcSubmit=byId('pc-submit-btn'); if(pcSubmit) pcSubmit.addEventListener('click',submitPlayersChoice);
   bindScoreButtons(); bindHighlightSelect();
 }
 
@@ -695,6 +709,8 @@ function bindAdmin(){
   });
   var genBtn=byId('gen-btn'); if(genBtn) genBtn.addEventListener('click',generateAssignments);
   var mpBtn=byId('manual-partners-btn'); if(mpBtn) mpBtn.addEventListener('click',openManualPartnersModal);
+  var tbBtn=byId('team-battle-btn'); if(tbBtn) tbBtn.addEventListener('click',openTeamBattleSetup);
+  var pcaBtn=byId('players-choice-admin-btn'); if(pcaBtn) pcaBtn.addEventListener('click',openPlayersChoiceAdmin);
   var postBtn=byId('post-btn');
   if(postBtn) postBtn.addEventListener('click',function(){
     var date=S.selectedDate; if(!date) return;
@@ -809,7 +825,7 @@ function sessionHTML(){
     +'<div class="card" style="border:1.5px solid #e8f5e9"><h2>Settings</h2>'
     +'<div class="form-row">'
     +'<div><label>Match Type</label><select id="s-type"><option value="singles"'+(sess.type==='singles'?' selected':'')+'>Singles</option><option value="doubles"'+(sess.type==='doubles'?' selected':'')+'>Doubles</option></select></div>'
-    +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'><label>Partners</label><select id="s-rotate"><option value="0"'+(!sess.rotatePartners&&!sess.manualPartners?' selected':'')+'>Same all day</option><option value="1"'+(sess.rotatePartners&&!sess.manualPartners?' selected':'')+'>Rotate each round</option><option value="manual"'+(sess.manualPartners?' selected':'')+'>Manual (I&#39;ll assign)</option></select></div>'
+    +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'><label>Mode</label><select id="s-rotate">'+'<option value="0"'+(!sess.rotatePartners&&!sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Same all day</option>'+'<option value="1"'+(sess.rotatePartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Rotate each round</option>'+'<option value="manual"'+(sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Manual (Admin assigns)</option>'+'<option value="teamBattle"'+(sess.teamBattle?' selected':'')+'>Team Battle (A vs B)</option>'+'<option value="playersChoice"'+(sess.playersChoice?' selected':'')+'>Players Choice</option>'+'</select></div>'
     +'</div><div class="form-row">'
     +'<div><label>Courts Available</label><input id="s-courts" type="number" min="1" max="20" value="'+sess.courts+'"></div>'
     +'<div><label>Matches per Player (1–8)</label><input id="s-matches" type="number" min="1" max="8" value="'+sess.matchesPerPlayer+'"></div>'
@@ -817,6 +833,8 @@ function sessionHTML(){
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
     +'<button class="btn btn-primary" id="gen-btn">🎾 Auto Assign Partners</button>'
     +(sess.type!=='singles'?'<button class="btn btn-secondary" id="manual-partners-btn">✋ Manually Assign Partners</button>':'')
+    +(sess.teamBattle?'<button class="btn btn-secondary" id="team-battle-btn">⚔️ Setup Team Battle</button>':'')
+    +(sess.playersChoice?'<button class="btn btn-secondary" id="players-choice-admin-btn">📋 View Players Choice</button>':'')
     +postBtnHTML+'</div>';
   if(sess.assignments){
     var inp2=getInPlayers(date), hlOpts='<option value="">-- Select your name --</option>';
@@ -836,8 +854,10 @@ function saveSessionSettings(){
   var t=byId('s-type'),r=byId('s-rotate'),c=byId('s-courts'),m=byId('s-matches');
   if(t) sess.type=t.value;
   if(r){
-    sess.manualPartners=(r.value==='manual');
     sess.rotatePartners=(r.value==='1');
+    sess.manualPartners=(r.value==='manual');
+    sess.teamBattle=(r.value==='teamBattle');
+    sess.playersChoice=(r.value==='playersChoice');
   }
   if(c) sess.courts=Math.max(1,parseInt(c.value)||4);
   if(m) sess.matchesPerPlayer=Math.min(8,Math.max(1,parseInt(m.value)||4));
@@ -1417,6 +1437,461 @@ function generateAssignmentsWithManual(date, sess, manual){
 
   sess.assignments={rounds:allRounds}; sess.scores={}; sess.posted=false;
   S.sessions[date]=sess; save(); showToast('Manual assignments generated!');
+}
+
+
+// ══════════════════════════════════════════════════════
+// TEAM BATTLE — ADMIN SETUP
+// ══════════════════════════════════════════════════════
+function openTeamBattleSetup(){
+  var date=S.selectedDate; if(!date){ showToast('No date selected.'); return; }
+  var sess=getSession(date);
+  var inP=getInPlayers(date);
+  if(inP.length<4){ showToast('Need at least 4 players marked IN.'); return; }
+
+  var teamA=sess.teamA||[], teamB=sess.teamB||[];
+  var captainA=sess.captainA||null, captainB=sess.captainB||null;
+
+  // Player select options
+  function playerOpts(selected){
+    var o='<option value="">— none —</option>';
+    for(var i=0;i<inP.length;i++){
+      o+='<option value="'+inP[i].id+'"'+(inP[i].id===selected?' selected':'')+'>'+fmtId(inP[i].id)+' '+esc(inP[i].name)+'</option>';
+    }
+    return o;
+  }
+
+  // Build team lists
+  function teamCheckboxes(team, prefix){
+    var h='';
+    for(var i=0;i<inP.length;i++){
+      var p=inP[i], checked=team.indexOf(p.id)>=0;
+      h+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">'
+        +'<input type="checkbox" class="'+prefix+'-chk" value="'+p.id+'"'+(checked?' checked':'')+'> '
+        +fmtId(p.id)+' '+esc(p.name)
+        +'</label>';
+    }
+    return h;
+  }
+
+  var body='<h3>⚔️ Team Battle Setup</h3>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
+    +'<div style="border:2px solid #1e40af;border-radius:8px;padding:10px">'
+    +'<div style="font-weight:700;color:#1e40af;margin-bottom:8px">🔵 Team A</div>'
+    +'<label style="font-size:.8rem">Captain</label>'
+    +'<select id="cap-a-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainA)+'</select>'
+    +'<label style="font-size:.8rem">Players</label>'
+    +'<div style="max-height:180px;overflow-y:auto">'+teamCheckboxes(teamA,'ta')+'</div>'
+    +'</div>'
+    +'<div style="border:2px solid #991b1b;border-radius:8px;padding:10px">'
+    +'<div style="font-weight:700;color:#991b1b;margin-bottom:8px">🔴 Team B</div>'
+    +'<label style="font-size:.8rem">Captain</label>'
+    +'<select id="cap-b-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainB)+'</select>'
+    +'<label style="font-size:.8rem">Players</label>'
+    +'<div style="max-height:180px;overflow-y:auto">'+teamCheckboxes(teamB,'tb')+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div class="alert alert-info" style="margin-top:10px;font-size:.82rem">Players can be on both teams or neither — checkboxes are independent.</div>'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-tb-save">Save & Generate</button>'
+    +'</div>';
+
+  showModal(body);
+  byId('m-cancel').addEventListener('click',closeModal);
+  byId('m-tb-save').addEventListener('click',function(){
+    var newTeamA=[], newTeamB=[];
+    document.querySelectorAll('.ta-chk:checked').forEach(function(c){ newTeamA.push(parseInt(c.value)); });
+    document.querySelectorAll('.tb-chk:checked').forEach(function(c){ newTeamB.push(parseInt(c.value)); });
+    var newCapA=parseInt(byId('cap-a-sel').value)||null;
+    var newCapB=parseInt(byId('cap-b-sel').value)||null;
+    if(!newTeamA.length||!newTeamB.length){ showToast('Each team needs at least one player.'); return; }
+    sess.teamA=newTeamA; sess.teamB=newTeamB;
+    sess.captainA=newCapA; sess.captainB=newCapB;
+    S.sessions[date]=sess; save();
+    generateTeamBattleAssignments(date, sess);
+    closeModal();
+    showToast('Team Battle saved & assignments generated!');
+  });
+}
+
+function generateTeamBattleAssignments(date, sess){
+  var teamA=sess.teamA||[], teamB=sess.teamB||[];
+  var ppCourt=sess.type==='singles'?2:4;
+  var courts=sess.courts||4;
+  var mpp=sess.matchesPerPlayer||4;
+  var matchesPerRound=Math.min(Math.min(Math.floor(teamA.length/(ppCourt/2)), Math.floor(teamB.length/(ppCourt/2))), courts);
+  if(matchesPerRound<1) matchesPerRound=1;
+
+  // Estimate rounds needed
+  var totalPlayers=teamA.length+teamB.length;
+  var playPerRound=matchesPerRound*ppCourt;
+  var totalRounds=Math.max(1,Math.ceil((totalPlayers*mpp)/Math.max(1,playPerRound)));
+  if(totalRounds>8) totalRounds=8;
+
+  // Get full player objects
+  function getInPByIds(ids){
+    return ids.map(function(id){ return getPlayer(id); }).filter(Boolean);
+  }
+  var aPlayers=getInPByIds(teamA).sort(function(a,b){ return parseFloat(b.usta)-parseFloat(a.usta); });
+  var bPlayers=getInPByIds(teamB).sort(function(a,b){ return parseFloat(b.usta)-parseFloat(a.usta); });
+
+  var allRounds=[];
+  for(var r=0;r<totalRounds;r++){
+    var roundCourts=[];
+    // Pair up A vs B players across courts
+    var usedA={}, usedB={};
+    for(var c=0;c<matchesPerRound;c++){
+      // Pick next unused players from each team
+      var aTeam=[], bTeam=[];
+      var half=ppCourt/2;
+      for(var i=0;i<aPlayers.length&&aTeam.length<half;i++){
+        if(!usedA[aPlayers[i].id]){ aTeam.push(aPlayers[i].id); usedA[aPlayers[i].id]=true; }
+      }
+      for(var i=0;i<bPlayers.length&&bTeam.length<half;i++){
+        if(!usedB[bPlayers[i].id]){ bTeam.push(bPlayers[i].id); usedB[bPlayers[i].id]=true; }
+      }
+      if(aTeam.length>0&&bTeam.length>0) roundCourts.push({teams:[aTeam,bTeam]});
+    }
+    // Byes = anyone in both teams not playing
+    var byes=[];
+    for(var i=0;i<aPlayers.length;i++) if(!usedA[aPlayers[i].id]) byes.push(aPlayers[i].id);
+    for(var i=0;i<bPlayers.length;i++) if(!usedB[bPlayers[i].id]) byes.push(bPlayers[i].id);
+    // Rotate for next round
+    if(aPlayers.length>1) aPlayers.push(aPlayers.shift());
+    if(bPlayers.length>1) bPlayers.push(bPlayers.shift());
+    allRounds.push({courts:roundCourts, byes:byes});
+  }
+
+  sess.assignments={rounds:allRounds, mode:'teamBattle'};
+  sess.scores={};
+  sess.posted=false;
+  S.sessions[date]=sess;
+  save();
+}
+
+// ══════════════════════════════════════════════════════
+// TEAM BATTLE — CAPTAIN VIEW (user-facing)
+// ══════════════════════════════════════════════════════
+function openCaptainLogin(){
+  var date=getUpcoming(); if(!date){ showToast('No upcoming session.'); return; }
+  var sess=getSession(date);
+  if(!sess.teamBattle){ showToast('No Team Battle active for this session.'); return; }
+  var inP=getInPlayers(date);
+  var pOpts='<option value="">-- Select your name --</option>';
+  for(var i=0;i<inP.length;i++){
+    var isCap=(inP[i].id===sess.captainA||inP[i].id===sess.captainB);
+    if(isCap) pOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' '+esc(inP[i].name)+' 👑</option>';
+  }
+  showModal('<h3>👑 Captain Login</h3>'
+    +'<div class="alert alert-info" style="margin-bottom:10px">Only assigned captains can access this view.</div>'
+    +'<label>Select Your Name</label>'
+    +'<select id="cap-login-sel" style="padding:10px;width:100%">'+pOpts+'</select>'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-cap-confirm">Enter My Team</button>'
+    +'</div>');
+  byId('m-cancel').addEventListener('click',closeModal);
+  byId('m-cap-confirm').addEventListener('click',function(){
+    var pid=parseInt(byId('cap-login-sel').value);
+    if(!pid){ showToast('Please select your name.'); return; }
+    if(pid!==sess.captainA&&pid!==sess.captainB){ showToast('You are not listed as a captain.'); return; }
+    S.captainPid=pid; saveLocalPrefs(); closeModal(); render();
+  });
+}
+
+function captainTeamHTML(){
+  var date=getUpcoming(); if(!date) return '<div class="card"><div class="alert alert-info">No upcoming session.</div></div>';
+  var sess=getSession(date);
+  if(!sess.teamBattle) return '<div class="card"><div class="alert alert-info">No Team Battle mode active.</div></div>';
+  if(!S.captainPid) return '<div class="card"><h2>⚔️ Captain View</h2>'
+    +'<div class="alert alert-info">You need to log in as a captain to access this view.</div>'
+    +'<button class="btn btn-primary" id="captain-login-btn">👑 Captain Login</button></div>';
+
+  var isCapA=(S.captainPid===sess.captainA);
+  var isCapB=(S.captainPid===sess.captainB);
+  if(!isCapA&&!isCapB) return '<div class="card"><div class="alert alert-warn">You are not a captain for this session. <button class="btn btn-secondary btn-sm" id="captain-login-btn">Switch Captain</button></div></div>';
+
+  var myTeam=isCapA?(sess.teamA||[]):(sess.teamB||[]);
+  var teamLabel=isCapA?'🔵 Team A':'🔴 Team B';
+  var teamColor=isCapA?'#1e40af':'#991b1b';
+  var teamBorder=isCapA?'#1e40af':'#991b1b';
+
+  var h='<div class="card"><h2>⚔️ '+teamLabel+'</h2>';
+  h+='<div style="font-size:.85rem;color:#555;margin-bottom:12px">Managing as captain: <strong>'+esc((getPlayer(S.captainPid)||{name:'?'}).name)+'</strong>'
+    +' <button class="btn btn-secondary btn-sm" id="captain-login-btn" style="margin-left:8px">Switch</button></div>';
+
+  // Show my team roster
+  h+='<div style="border:2px solid '+teamBorder+';border-radius:8px;padding:12px;margin-bottom:12px">';
+  h+='<div style="font-weight:700;color:'+teamColor+';margin-bottom:8px">My Team ('+myTeam.length+' players)</div>';
+  if(!myTeam.length){ h+='<div style="color:#aaa;font-size:.85rem">No players assigned yet.</div>'; }
+  else {
+    for(var i=0;i<myTeam.length;i++){
+      var p=getPlayer(myTeam[i]);
+      var isCap=(myTeam[i]===S.captainPid);
+      h+='<span class="'+(isCapA?'team-a-chip':'team-b-chip')+'">'+(isCap?'👑 ':'')+esc(p?p.name:fmtId(myTeam[i]))+'</span>';
+    }
+  }
+  h+='</div>';
+
+  // Show assignments for my team
+  if(sess.assignments&&sess.assignments.rounds){
+    h+='<div style="font-weight:700;margin-bottom:8px">Today\'s Matches</div>';
+    var rounds=sess.assignments.rounds;
+    for(var ri=0;ri<rounds.length;ri++){
+      var round=rounds[ri]; if(!round||!round.courts) continue;
+      h+='<div style="font-size:.85rem;font-weight:600;color:#555;margin-top:10px">Round '+(ri+1)+'</div>';
+      var myPlayed=false;
+      for(var ci=0;ci<round.courts.length;ci++){
+        var court=round.courts[ci];
+        // Check if any of my team is on this court
+        var myTeamOnCourt=false;
+        for(var ti=0;ti<court.teams.length;ti++){
+          for(var pi=0;pi<court.teams[ti].length;pi++){
+            if(myTeam.indexOf(court.teams[ti][pi])>=0){ myTeamOnCourt=true; break; }
+          }
+          if(myTeamOnCourt) break;
+        }
+        if(!myTeamOnCourt) continue;
+        myPlayed=true;
+        var sc=sess.scores?sess.scores[ri+'_'+ci]:null;
+        h+='<div style="border:1.5px solid #ddd;border-radius:8px;padding:8px;margin-top:4px">';
+        h+='<div style="font-size:.8rem;color:#888">Court '+(ci+1)+'</div>';
+        for(var ti=0;ti<court.teams.length;ti++){
+          var teamPids=court.teams[ti];
+          var myT=false;
+          for(var pi=0;pi<teamPids.length;pi++) if(myTeam.indexOf(teamPids[pi])>=0){ myT=true; break; }
+          var bgColor=myT?(isCapA?'#dbeafe':'#fee2e2'):'#f5f5f5';
+          var tScore=sc?(ti===0?sc.t1:sc.t2):null;
+          h+='<div style="background:'+bgColor+';border-radius:6px;padding:4px 8px;margin:3px 0;display:flex;justify-content:space-between;align-items:center">';
+          h+='<div>';
+          for(var pi=0;pi<teamPids.length;pi++){
+            var pp=getPlayer(teamPids[pi]);
+            h+='<span style="font-size:.85rem;font-weight:'+(myT?'700':'400')+'">'+esc(pp?pp.name:fmtId(teamPids[pi]))+(pi<teamPids.length-1?' & ':'')+'</span>';
+          }
+          h+='</div>';
+          h+='<span style="font-weight:700;color:'+(myT?teamColor:'#666')+'">'+(tScore!==null&&tScore!==''?tScore:'—')+'</span>';
+          h+='</div>';
+          if(ti===0) h+='<div style="text-align:center;font-size:.75rem;color:#aaa">vs</div>';
+        }
+        h+='</div>';
+      }
+      if(!myPlayed){
+        // Check if team is in byes
+        var inBye=false;
+        if(round.byes) for(var pi=0;pi<myTeam.length;pi++) if(round.byes.indexOf(myTeam[pi])>=0){ inBye=true; break; }
+        h+='<div style="color:#856404;font-size:.82rem;padding:4px 0">'+(inBye?'⏸ Sitting out this round':'No courts assigned')+'</div>';
+      }
+    }
+  } else {
+    h+='<div class="alert alert-info">Assignments not yet generated by admin.</div>';
+  }
+
+  h+='</div>';
+  return h;
+}
+
+// ══════════════════════════════════════════════════════
+// PLAYERS CHOICE — USER VIEW
+// ══════════════════════════════════════════════════════
+function playersChoiceUserHTML(){
+  var date=getUpcoming(); if(!date) return '<div class="card"><div class="alert alert-info">No upcoming session.</div></div>';
+  var sess=getSession(date);
+  if(!sess.playersChoice) return '<div class="card"><div class="alert alert-info">Players Choice mode is not active for this session.</div></div>';
+
+  var inP=getInPlayers(date);
+  if(!inP.length) return '<div class="card"><div class="alert alert-info">No players marked IN yet.</div></div>';
+
+  var ppCourt=sess.type==='singles'?2:4;
+  var mpp=sess.matchesPerPlayer||4;
+  var courts=sess.courts||4;
+
+  // Load existing PC submissions
+  var pcData=sess.pcSubmissions||{};
+
+  var pOpts='<option value="">— unassigned —</option>';
+  for(var i=0;i<inP.length;i++) pOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' '+esc(inP[i].name)+'</option>';
+
+  var courtOpts='';
+  for(var c=1;c<=courts;c++) courtOpts+='<option value="'+c+'">Court '+c+'</option>';
+
+  var h='<div class="card"><h2>🎾 Players Choice</h2>';
+  h+='<div class="alert alert-info" style="margin-bottom:12px">Select your partner, court, and round for each match you want to play.</div>';
+
+  // Show who has already submitted
+  var submittedPids=Object.keys(pcData);
+  if(submittedPids.length){
+    h+='<div style="margin-bottom:12px"><div style="font-weight:700;font-size:.85rem;margin-bottom:6px">✅ Submitted ('+submittedPids.length+' players)</div>';
+    h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    for(var i=0;i<submittedPids.length;i++){
+      var sp=getPlayer(parseInt(submittedPids[i]));
+      h+='<span style="background:#d4edda;color:#155724;border-radius:14px;padding:3px 10px;font-size:.82rem">'+esc(sp?sp.name:submittedPids[i])+'</span>';
+    }
+    h+='</div></div>';
+  }
+
+  h+='<div style="border:1.5px solid #e8f5e9;border-radius:8px;padding:12px">';
+  h+='<div style="font-weight:700;margin-bottom:10px">Submit My Preferences</div>';
+  h+='<label>Your Name</label>';
+  h+='<select id="pc-self-sel" style="width:100%;padding:8px;margin-bottom:10px">'+pOpts+'</select>';
+
+  for(var r=0;r<mpp;r++){
+    h+='<div style="border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:8px">';
+    h+='<div style="font-size:.85rem;font-weight:700;color:#1a5c2a;margin-bottom:6px">Match '+(r+1)+'</div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+    if(ppCourt===4){
+      h+='<div><label style="font-size:.78rem">Partner</label>';
+      h+='<select id="pc-partner-'+r+'" style="width:100%;padding:6px">'+pOpts+'</select></div>';
+    }
+    h+='<div><label style="font-size:.78rem">Court</label>';
+    h+='<select id="pc-court-'+r+'" style="width:100%;padding:6px">'+courtOpts+'</select></div>';
+    h+='</div></div>';
+  }
+
+  h+='<button class="btn btn-primary" id="pc-submit-btn" style="width:100%;margin-top:4px">Submit My Preferences</button>';
+  h+='</div></div>';
+  return h;
+}
+
+function submitPlayersChoice(){
+  var date=getUpcoming(); if(!date) return;
+  var sess=getSession(date);
+  var selfSel=byId('pc-self-sel'); if(!selfSel) return;
+  var selfPid=parseInt(selfSel.value);
+  if(!selfPid){ showToast('Please select your name.'); return; }
+  var mpp=sess.matchesPerPlayer||4;
+  var ppCourt=sess.type==='singles'?2:4;
+  var prefs=[];
+  for(var r=0;r<mpp;r++){
+    var partnerEl=byId('pc-partner-'+r);
+    var courtEl=byId('pc-court-'+r);
+    prefs.push({
+      partner: partnerEl?parseInt(partnerEl.value)||null:null,
+      court: courtEl?parseInt(courtEl.value)||1:1
+    });
+  }
+  if(!sess.pcSubmissions) sess.pcSubmissions={};
+  sess.pcSubmissions[selfPid]=prefs;
+  S.sessions[date]=sess; save();
+  showToast('Preferences submitted!');
+  render();
+}
+
+// ══════════════════════════════════════════════════════
+// PLAYERS CHOICE — ADMIN VIEW
+// ══════════════════════════════════════════════════════
+function openPlayersChoiceAdmin(){
+  var date=S.selectedDate; if(!date){ showToast('No date selected.'); return; }
+  var sess=getSession(date);
+  var pcData=sess.pcSubmissions||{};
+  var inP=getInPlayers(date);
+  var mpp=sess.matchesPerPlayer||4;
+  var ppCourt=sess.type==='singles'?2:4;
+  var pids=Object.keys(pcData);
+
+  if(!pids.length){
+    showModal('<h3>📋 Players Choice Submissions</h3><div class="alert alert-info">No submissions yet.</div><div class="modal-btns"><button class="btn btn-secondary" id="m-cancel">Close</button></div>');
+    byId('m-cancel').addEventListener('click',closeModal);
+    return;
+  }
+
+  var body='<h3>📋 Players Choice Submissions</h3>';
+  body+='<div style="overflow-y:auto;max-height:55vh">';
+  for(var i=0;i<pids.length;i++){
+    var pid=parseInt(pids[i]), pp=getPlayer(pid);
+    var prefs=pcData[pids[i]];
+    body+='<div style="border:1.5px solid #e8f5e9;border-radius:8px;padding:8px;margin-bottom:8px">';
+    body+='<div style="font-weight:700;color:#1a5c2a;margin-bottom:4px">'+esc(pp?pp.name:fmtId(pid))+'</div>';
+    for(var r=0;r<prefs.length;r++){
+      var pr=prefs[r];
+      var partnerP=pr.partner?getPlayer(pr.partner):null;
+      body+='<div style="font-size:.82rem;padding:2px 0">Match '+(r+1)+': ';
+      if(ppCourt===4) body+='Partner: <strong>'+esc(partnerP?partnerP.name:(pr.partner?fmtId(pr.partner):'Any'))+'</strong> · ';
+      body+='Court <strong>'+pr.court+'</strong></div>';
+    }
+    body+='</div>';
+  }
+  body+='</div>';
+  body+='<div class="modal-btns">';
+  body+='<button class="btn btn-secondary" id="m-cancel">Close</button>';
+  body+='<button class="btn btn-primary" id="m-pc-gen">Generate from Preferences</button>';
+  body+='</div>';
+
+  showModal(body);
+  byId('m-cancel').addEventListener('click',closeModal);
+  byId('m-pc-gen').addEventListener('click',function(){
+    generatePlayersChoiceAssignments(date, sess, pcData);
+    closeModal();
+    showToast('Assignments generated from player preferences!');
+  });
+}
+
+function generatePlayersChoiceAssignments(date, sess, pcData){
+  var inP=getInPlayers(date);
+  var ppCourt=sess.type==='singles'?2:4;
+  var mpp=sess.matchesPerPlayer||4;
+  var courts=sess.courts||4;
+
+  // Build rounds from preferences
+  // Each round = one match slot per player
+  var allRounds=[];
+  for(var r=0;r<mpp;r++){
+    var placed={};
+    var roundCourts=[];
+    // Collect requests for this round
+    var requests=[];
+    var pids=Object.keys(pcData);
+    for(var i=0;i<pids.length;i++){
+      var pid=parseInt(pids[i]);
+      var prefs=pcData[pids[i]];
+      if(prefs[r]){ requests.push({pid:pid, partner:prefs[r].partner, court:prefs[r].court}); }
+    }
+    // Group by court
+    var byCourt={};
+    for(var i=0;i<requests.length;i++){
+      var ct=requests[i].court;
+      if(!byCourt[ct]) byCourt[ct]=[];
+      byCourt[ct].push(requests[i]);
+    }
+    // Build court assignments
+    var ctKeys=Object.keys(byCourt).sort();
+    for(var ci=0;ci<ctKeys.length&&ci<courts;ci++){
+      var ctReqs=byCourt[ctKeys[ci]];
+      if(ctReqs.length<2) continue;
+      var team1=[], team2=[];
+      var half=ppCourt/2;
+      // pair by partner preference or just split
+      var used={};
+      for(var i=0;i<ctReqs.length;i++){
+        if(used[ctReqs[i].pid]) continue;
+        var partner=ctReqs[i].partner;
+        if(ppCourt===4&&partner&&!used[partner]){
+          if(team1.length<half){ team1.push(ctReqs[i].pid); team1.push(partner); used[ctReqs[i].pid]=true; used[partner]=true; }
+          else if(team2.length<half){ team2.push(ctReqs[i].pid); team2.push(partner); used[ctReqs[i].pid]=true; used[partner]=true; }
+        } else {
+          if(team1.length<half){ team1.push(ctReqs[i].pid); used[ctReqs[i].pid]=true; }
+          else if(team2.length<half){ team2.push(ctReqs[i].pid); used[ctReqs[i].pid]=true; }
+        }
+      }
+      if(team1.length>0&&team2.length>0) roundCourts.push({teams:[team1,team2]});
+    }
+    // Byes = players marked IN but not placed
+    var allPlaced={};
+    for(var ci=0;ci<roundCourts.length;ci++){
+      for(var ti=0;ti<roundCourts[ci].teams.length;ti++){
+        for(var pi=0;pi<roundCourts[ci].teams[ti].length;pi++) allPlaced[roundCourts[ci].teams[ti][pi]]=true;
+      }
+    }
+    var byes=[];
+    for(var i=0;i<inP.length;i++) if(!allPlaced[inP[i].id]) byes.push(inP[i].id);
+    allRounds.push({courts:roundCourts, byes:byes});
+  }
+
+  sess.assignments={rounds:allRounds, mode:'playersChoice'};
+  sess.scores={};
+  sess.posted=false;
+  S.sessions[date]=sess;
+  save();
 }
 
 // ── AUTH ───────────────────────────────────────────────
