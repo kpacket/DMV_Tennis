@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>DMV Tennis</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#f0f4f0;color:#222;min-height:100vh}
+header{background:#1a5c2a;color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+header h1{font-size:1.2rem}
+.btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;font-weight:600;transition:opacity .2s;display:inline-block;-webkit-tap-highlight-color:transparent}
+.btn-primary{background:#f5a623;color:#222}
+.btn-green{background:#1a5c2a;color:#fff}
+.btn-secondary{background:#fff;color:#1a5c2a;border:2px solid #1a5c2a}
+.btn-danger{background:#c0392b;color:#fff}
+.btn-sm{padding:5px 10px;font-size:.8rem}
+.btn:active{opacity:.7}
+#app{max-width:1000px;margin:0 auto;padding:16px}
+.card{background:#fff;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.card h2{color:#1a5c2a;margin-bottom:12px;font-size:1.1rem;border-bottom:2px solid #e8f5e9;padding-bottom:8px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:9px 18px;border-radius:20px;cursor:pointer;font-weight:600;font-size:.9rem;border:2px solid #1a5c2a;color:#1a5c2a;background:#fff;-webkit-tap-highlight-color:transparent}
+.tab.active{background:#1a5c2a;color:#fff}
+input,select,textarea{width:100%;padding:10px;border:1.5px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:8px;-webkit-appearance:none;appearance:none}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#1a5c2a}
+label{font-size:.85rem;font-weight:600;color:#444;display:block;margin-bottom:4px}
+.form-row{display:flex;gap:8px;flex-wrap:wrap}
+.form-row>div{flex:1;min-width:140px}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{background:#1a5c2a;color:#fff;padding:8px;text-align:left}
+td{padding:8px;border-bottom:1px solid #eee;vertical-align:middle}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:700}
+.badge-in{background:#d4edda;color:#155724}
+.badge-out{background:#f8d7da;color:#721c24}
+.round-block{margin-bottom:20px}
+.round-title{font-weight:700;color:#1a5c2a;font-size:1rem;margin-bottom:10px;padding:6px 12px;background:#e8f5e9;border-radius:6px}
+.courts-row{display:flex;gap:10px;flex-wrap:wrap}
+.court-card{border:2px solid #1a5c2a;border-radius:10px;overflow:hidden;flex:1;min-width:200px;max-width:280px}
+.court-card.hl-court{border-color:#e67e00}
+.court-header{background:#1a5c2a;color:#fff;padding:7px 12px;font-weight:700;font-size:.9rem}
+.court-header.hl-hdr{background:#e67e00}
+.court-body{padding:10px 12px}
+.team{background:#e8f5e9;border-radius:6px;padding:7px 10px;margin:3px 0}
+.team-label{font-size:.72rem;font-weight:700;color:#1a5c2a;margin-bottom:3px}
+.player-chip{display:inline-block;background:#fff;border:1.5px solid #1a5c2a;border-radius:14px;padding:2px 9px;margin:2px;font-size:.78rem}
+.player-chip.hl{background:#f5a623;border-color:#e67e00;font-weight:700}
+.bye-chip{background:#fff3cd;border:1.5px solid #e6ac00}
+.vs{text-align:center;font-weight:700;color:#888;margin:3px 0;font-size:.78rem}
+.score-row{display:flex;align-items:center;gap:6px;margin-top:8px;padding-top:8px;border-top:1px dashed #ccc;flex-wrap:wrap}
+.score-badge{background:#e8f5e9;border-radius:6px;padding:3px 8px;font-size:.82rem;font-weight:700;color:#1a5c2a}
+.score-na{color:#aaa;font-size:.8rem;font-style:italic;flex:1}
+.bye-row{background:#fff3cd;border-radius:6px;padding:8px 12px;margin-top:8px;font-size:.85rem}
+.alert{padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:.88rem}
+.alert-info{background:#d1ecf1;color:#0c5460}
+.alert-warn{background:#fff3cd;color:#856404}
+.calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}
+.cal-day{padding:6px;text-align:center;border-radius:6px;font-size:.82rem;cursor:default}
+.cal-sat{border:1.5px solid #ccc;background:#f9f9f9;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.cal-sat:active{background:#e8f5e9}
+.cal-sat.active{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
+.cal-hdr{font-weight:700;font-size:.75rem;color:#666}
+.cal-other{color:#ccc}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto}
+.modal h3{color:#1a5c2a;margin-bottom:14px}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.season-btn{padding:6px 14px;border-radius:16px;border:2px solid #1a5c2a;cursor:pointer;font-weight:600;font-size:.85rem;background:#fff;color:#1a5c2a;-webkit-tap-highlight-color:transparent}
+.season-btn.active{background:#1a5c2a;color:#fff}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 22px;border-radius:20px;font-size:.9rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);opacity:0;transition:opacity .4s;pointer-events:none;white-space:nowrap;max-width:90vw;text-align:center}
+.score-input-wrap{display:flex;align-items:center;gap:8px;margin:6px 0}
+.score-input-wrap input{margin:0;width:70px;text-align:center;flex-shrink:0}
+.score-team-lbl{font-size:.9rem;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rsvp-big-btn{flex:1;padding:16px;font-size:1.1rem;border-radius:8px;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎾 DMV Tennis</h1>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span id="hdr-season" style="font-size:.85rem;opacity:.85"></span>
+    <button class="btn btn-secondary btn-sm" id="admin-btn">Admin Login</button>
+  </div>
+</header>
+<div id="app"></div>
+<div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal-body"></div></div>
+<div id="toast"></div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+var S = {
+  players: [],
+  seasons: {Spring:[],Summer:[],Fall:[],Winter:[]},
+  currentSeason: 'Winter',
+  sessions: {},
+  byeCounts: {},
+  isAdmin: false,
+  selectedDate: null,
+  adminTab: 'roster',
+  userTab: 'rsvp'
+};
+var PASS = 'mydmvtennis';
+var SEASONS = ['Spring','Summer','Fall','Winter'];
+
+function save(){
+  try{ localStorage.setItem('dmvt', JSON.stringify(S)); } catch(e){}
+}
+function load(){
+  try{
+    var d = localStorage.getItem('dmvt');
+    if(!d) return;
+    var parsed = JSON.parse(d);
+    var keys = Object.keys(parsed);
+    for(var i=0;i<keys.length;i++) S[keys[i]] = parsed[keys[i]];
+    // Ensure required nested objects exist after load
+    if(!S.seasons) S.seasons = {Spring:[],Summer:[],Fall:[],Winter:[]};
+    if(!S.sessions) S.sessions = {};
+    if(!S.byeCounts) S.byeCounts = {};
+    if(!S.players) S.players = [];
+  } catch(e){ /* silently ignore corrupt data */ }
+}
+load();
+
+// ── HELPERS ────────────────────────────────────────────
+function esc(str){
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+function getPlayer(id){
+  for(var i=0;i<S.players.length;i++) if(S.players[i].id===id) return S.players[i];
+  return null;
+}
+function fmtId(id){ return id<10 ? '0'+id : ''+id; }
+function fmtDate(d){
+  try{ return new Date(d+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
+  catch(e){ return d||''; }
+}
+function getSession(date){
+  if(!date) return {type:'doubles',rotatePartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!S.sessions[date]){
+    S.sessions[date] = {type:'doubles',rotatePartners:false,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  }
+  var sess = S.sessions[date];
+  if(!sess.scores) sess.scores = {};
+  if(!sess.rsvps) sess.rsvps = {};
+  if(sess.courts === undefined) sess.courts = 4;
+  if(sess.matchesPerPlayer === undefined) sess.matchesPerPlayer = 4;
+  if(sess.type === undefined) sess.type = 'doubles';
+  return sess;
+}
+function getInPlayers(date){
+  var sess = getSession(date);
+  var result = [];
+  for(var i=0;i<S.players.length;i++){
+    if(sess.rsvps[S.players[i].id] === 'IN') result.push(S.players[i]);
+  }
+  return result;
+}
+function getUpcoming(){
+  var dates = (S.seasons[S.currentSeason]||[]).slice().sort();
+  var today = new Date(); today.setHours(0,0,0,0);
+  for(var i=0;i<dates.length;i++){
+    if(new Date(dates[i]+'T12:00:00') >= today) return dates[i];
+  }
+  return null;
+}
+function byId(id){ return document.getElementById(id); }
+
+// ── TOAST ──────────────────────────────────────────────
+var _tt = null;
+function showToast(msg){
+  var t = byId('toast');
+  if(!t) return;
+  t.textContent = msg;
+  t.style.opacity = '1';
+  if(_tt) clearTimeout(_tt);
+  _tt = setTimeout(function(){ t.style.opacity='0'; }, 3000);
+}
+
+// ── MODAL ──────────────────────────────────────────────
+function showModal(html){
+  byId('modal-body').innerHTML = html;
+  byId('modal-overlay').classList.add('open');
+}
+function closeModal(){
+  byId('modal-overlay').classList.remove('open');
+  byId('modal-body').innerHTML = '';
+}
+byId('modal-overlay').addEventListener('click', function(e){
+  if(e.target.id === 'modal-overlay') closeModal();
+});
+
+// ── ROOT RENDER ────────────────────────────────────────
+function render(){
+  byId('hdr-season').textContent = S.currentSeason + ' Season';
+  byId('admin-btn').textContent = S.isAdmin ? 'Logout' : 'Admin Login';
+  byId('app').innerHTML = S.isAdmin ? adminHTML() : userHTML();
+  if(S.isAdmin) bindAdmin(); else bindUser();
+}
+
+// ══════════════════════════════════════════════════════
+// USER VIEW
+// ══════════════════════════════════════════════════════
+function userHTML(){
+  var h = '<div class="tabs">'
+    + '<button class="tab'+(S.userTab==='rsvp'?' active':'')+'" data-utab="rsvp">RSVP</button>'
+    + '<button class="tab'+(S.userTab==='schedule'?' active':'')+'" data-utab="schedule">Court Schedule</button>'
+    + '</div>';
+  h += (S.userTab==='rsvp') ? rsvpHTML() : scheduleHTML(false);
+  return h;
+}
+
+function bindUser(){
+  var tabs = document.querySelectorAll('[data-utab]');
+  for(var i=0;i<tabs.length;i++){
+    (function(b){ b.addEventListener('click', function(){ S.userTab=b.dataset.utab; render(); }); })(tabs[i]);
+  }
+  var lookupBtn = byId('rsvp-lookup-btn');
+  if(lookupBtn) lookupBtn.addEventListener('click', renderRsvpStatus);
+  var rsvpSel = byId('rsvp-sel');
+  if(rsvpSel){
+    rsvpSel.addEventListener('change', renderRsvpStatus);
+    rsvpSel.addEventListener('input', renderRsvpStatus);
+  }
+  bindScoreButtons();
+  bindHighlightSelect();
+}
+
+// ── RSVP ───────────────────────────────────────────────
+function rsvpHTML(){
+  var date = getUpcoming();
+  if(!date) return '<div class="card"><h2>📅 Upcoming Saturday</h2><div class="alert alert-info">No upcoming Saturday scheduled yet.</div></div>';
+  var label = '';
+  try{ label = new Date(date+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'}); }
+  catch(e){ label = date; }
+  var opts = '<option value="">-- Choose your name --</option>';
+  for(var i=0;i<S.players.length;i++){
+    var p = S.players[i];
+    opts += '<option value="'+p.id+'">'+fmtId(p.id)+' - '+esc(p.name)+'</option>';
+  }
+  return '<div class="card"><h2>📅 '+esc(label)+'</h2>'
+    +'<label>Select Your Name</label>'
+    +'<select id="rsvp-sel" style="font-size:1rem;padding:12px;margin-bottom:10px">'+opts+'</select>'
+    +'<button class="btn btn-green" style="width:100%;padding:12px;font-size:1rem;margin-bottom:12px" id="rsvp-lookup-btn">View / Update My Status</button>'
+    +'<div id="rsvp-status"></div>'
+    +'</div>';
+}
+
+function renderRsvpStatus(){
+  var sel = byId('rsvp-sel');
+  var el = byId('rsvp-status');
+  if(!sel || !el) return;
+  var pid = parseInt(sel.value);
+  if(!pid){
+    el.innerHTML = '<div class="alert alert-warn">Please select your name first.</div>';
+    return;
+  }
+  var date = getUpcoming();
+  if(!date){ el.innerHTML=''; return; }
+  var sess = getSession(date);
+  var cur = sess.rsvps[pid] || null;
+  var p = getPlayer(pid);
+  var name = p ? p.name : fmtId(pid);
+  el.innerHTML = '<div>'
+    +'<div style="font-size:.95rem;margin-bottom:10px">Status for <strong>'+esc(name)+'</strong>: '
+    +(cur ? '<span class="badge '+(cur==='IN'?'badge-in':'badge-out')+'">'+cur+'</span>' : '<span style="color:#888">Not set</span>')
+    +'</div>'
+    +'<div style="display:flex;gap:12px">'
+    +'<button class="btn rsvp-big-btn '+(cur==='IN'?'btn-primary':'btn-secondary')+'" id="btn-in">✅ IN</button>'
+    +'<button class="btn rsvp-big-btn '+(cur==='OUT'?'btn-danger':'btn-secondary')+'" id="btn-out">❌ OUT</button>'
+    +'</div></div>';
+  byId('btn-in').addEventListener('click', function(){ setRsvp(pid,'IN',date); });
+  byId('btn-out').addEventListener('click', function(){ setRsvp(pid,'OUT',date); });
+}
+
+function setRsvp(pid, status, date){
+  var sess = getSession(date);
+  sess.rsvps[pid] = status;
+  S.sessions[date] = sess;
+  save();
+  var p = getPlayer(pid);
+  var name = p ? p.name : fmtId(pid);
+  var el = byId('rsvp-status');
+  if(!el) return;
+  el.innerHTML = '<div>'
+    +'<div style="font-size:.95rem;margin-bottom:10px">Status for <strong>'+esc(name)+'</strong>: '
+    +'<span class="badge '+(status==='IN'?'badge-in':'badge-out')+'">'+status+'</span>'
+    +'</div>'
+    +'<div style="display:flex;gap:12px">'
+    +'<button class="btn rsvp-big-btn '+(status==='IN'?'btn-primary':'btn-secondary')+'" id="btn-in">✅ IN</button>'
+    +'<button class="btn rsvp-big-btn '+(status==='OUT'?'btn-danger':'btn-secondary')+'" id="btn-out">❌ OUT</button>'
+    +'</div>'
+    +'<div style="margin-top:10px;color:#1a5c2a;font-weight:700">✓ Saved!</div>'
+    +'</div>';
+  byId('btn-in').addEventListener('click', function(){ setRsvp(pid,'IN',date); });
+  byId('btn-out').addEventListener('click', function(){ setRsvp(pid,'OUT',date); });
+}
+
+// ── SCHEDULE ───────────────────────────────────────────
+function scheduleHTML(isAdmin){
+  var date = isAdmin ? S.selectedDate : getUpcoming();
+  if(!date) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No date available.</div></div>';
+  var sess = getSession(date);
+  if(!isAdmin && (!sess.posted || !sess.assignments))
+    return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
+  if(!sess.assignments)
+    return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No assignments generated yet.</div></div>';
+  var inP = getInPlayers(date);
+  var hlOpts = '<option value="">-- Select your name --</option>';
+  for(var i=0;i<inP.length;i++)
+    hlOpts += '<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' - '+esc(inP[i].name)+'</option>';
+  return '<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'
+    +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
+    +'<label>🔍 Highlight My Matches</label>'
+    +'<select id="hl-sel">'+hlOpts+'</select>'
+    +'</div>'
+    +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div>'
+    +'</div>';
+}
+
+function roundsHTML(sess, date, hid){
+  if(!sess || !sess.assignments || !Array.isArray(sess.assignments.rounds)) return '';
+  var scores = sess.scores || {};
+  var out = '';
+  var rounds = sess.assignments.rounds;
+  for(var ri=0;ri<rounds.length;ri++){
+    var round = rounds[ri];
+    if(!round || !Array.isArray(round.courts)) continue;
+    out += '<div class="round-block"><div class="round-title">Round '+(ri+1)+'</div><div class="courts-row">';
+    for(var ci=0;ci<round.courts.length;ci++){
+      var court = round.courts[ci];
+      if(!court || !Array.isArray(court.teams)) continue;
+      var hasMe = false;
+      if(hid != null){
+        for(var t=0;t<court.teams.length;t++){
+          if(Array.isArray(court.teams[t]) && court.teams[t].indexOf(hid)>=0){ hasMe=true; break; }
+        }
+      }
+      var scoreKey = ri+'_'+ci;
+      var sc = scores[scoreKey] || null;
+      out += '<div class="court-card'+(hasMe?' hl-court':'')+'">'
+        +'<div class="court-header'+(hasMe?' hl-hdr':'')+'">Court '+(ci+1)+'</div>'
+        +'<div class="court-body">';
+      for(var ti=0;ti<court.teams.length;ti++){
+        var team = court.teams[ti];
+        if(!Array.isArray(team)) continue;
+        out += '<div class="team"><div class="team-label">Team '+(ti+1)+'</div>';
+        for(var pi=0;pi<team.length;pi++){
+          var pid2 = team[pi];
+          var tp = getPlayer(pid2);
+          out += '<span class="player-chip'+(pid2===hid?' hl':'')+'">'+fmtId(pid2)+' '+(tp?esc(tp.name):'?')+'</span>';
+        }
+        out += '</div>';
+        if(ti===0 && court.teams.length>1) out += '<div class="vs">VS</div>';
+      }
+      out += '<div class="score-row">';
+      if(sc) out += '<span class="score-badge">T1: '+esc(sc.t1)+' — T2: '+esc(sc.t2)+'</span>';
+      else    out += '<span class="score-na">No score yet</span>';
+      out += '<button class="btn btn-secondary btn-sm" data-score-btn data-date="'+esc(date)+'" data-round="'+ri+'" data-court="'+ci+'">'+(sc?'Edit Score':'+ Score')+'</button>';
+      out += '</div></div></div>';
+    }
+    out += '</div>';
+    if(Array.isArray(round.byes) && round.byes.length){
+      out += '<div class="bye-row">⏸ Sitting out: ';
+      for(var bi=0;bi<round.byes.length;bi++){
+        var bpid = round.byes[bi];
+        var bp = getPlayer(bpid);
+        out += '<span class="player-chip bye-chip'+(bpid===hid?' hl':'')+'">'+fmtId(bpid)+' '+(bp?esc(bp.name):'?')+'</span>';
+      }
+      out += '</div>';
+    }
+    out += '</div>';
+  }
+  return out;
+}
+
+function bindScoreButtons(){
+  var btns = document.querySelectorAll('[data-score-btn]');
+  for(var i=0;i<btns.length;i++){
+    (function(b){
+      b.addEventListener('click', function(){
+        var date=b.dataset.date, ri=parseInt(b.dataset.round), ci=parseInt(b.dataset.court);
+        if(date && !isNaN(ri) && !isNaN(ci)) openScoreModal(date,ri,ci);
+      });
+    })(btns[i]);
+  }
+}
+
+function bindHighlightSelect(){
+  var hsel = byId('hl-sel');
+  if(!hsel) return;
+  hsel.addEventListener('change', function(){
+    var hid = parseInt(hsel.value)||null;
+    var date = S.isAdmin ? S.selectedDate : getUpcoming();
+    if(!date) return;
+    var sess = getSession(date);
+    var el = byId('rounds-display');
+    if(el){ el.innerHTML = roundsHTML(sess,date,hid); bindScoreButtons(); }
+  });
+}
+
+// ── SCORE MODAL ────────────────────────────────────────
+function openScoreModal(date, ri, ci){
+  var sess = getSession(date);
+  if(!sess.assignments || !Array.isArray(sess.assignments.rounds)) return;
+  var round = sess.assignments.rounds[ri];
+  if(!round || !Array.isArray(round.courts)) return;
+  var court = round.courts[ci];
+  if(!court || !Array.isArray(court.teams)) return;
+  var key = ri+'_'+ci;
+  var sc = sess.scores[key] || {t1:'',t2:''};
+  function teamName(team){
+    if(!Array.isArray(team)) return 'Team';
+    var names=[];
+    for(var i=0;i<team.length;i++){ var p=getPlayer(team[i]); names.push(p?p.name:fmtId(team[i])); }
+    return names.join(' & ');
+  }
+  var t1 = teamName(court.teams[0]) || 'Team 1';
+  var t2 = teamName(court.teams[1]) || 'Team 2';
+  var clearBtnHTML = (sc.t1!=='') ? '<button class="btn btn-danger btn-sm" id="sc-clear">Clear</button>' : '';
+  showModal('<h3>📝 Score — Court '+(ci+1)+', Round '+(ri+1)+'</h3>'
+    +'<div class="score-input-wrap">'
+    +'<span class="score-team-lbl" title="'+esc(t1)+'">'+esc(t1)+'</span>'
+    +'<input id="sc-t1" type="number" min="0" max="99" value="'+esc(sc.t1)+'" placeholder="0">'
+    +'</div>'
+    +'<div style="text-align:center;font-weight:700;color:#888;margin:4px 0">VS</div>'
+    +'<div class="score-input-wrap">'
+    +'<span class="score-team-lbl" title="'+esc(t2)+'">'+esc(t2)+'</span>'
+    +'<input id="sc-t2" type="number" min="0" max="99" value="'+esc(sc.t2)+'" placeholder="0">'
+    +'</div>'
+    +'<div class="modal-btns">'
+    +clearBtnHTML
+    +'<button class="btn btn-secondary" id="sc-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="sc-save">Save Score</button>'
+    +'</div>');
+  byId('sc-cancel').addEventListener('click', closeModal);
+  var clr = byId('sc-clear');
+  if(clr) clr.addEventListener('click', function(){
+    delete sess.scores[key];
+    S.sessions[date]=sess; save(); closeModal(); render();
+    showToast('Score cleared.');
+  });
+  byId('sc-save').addEventListener('click', function(){
+    var v1 = byId('sc-t1').value.trim();
+    var v2 = byId('sc-t2').value.trim();
+    if(v1===''||v2===''){ showToast('Please enter scores for both teams.'); return; }
+    sess.scores[key] = {t1:v1, t2:v2};
+    S.sessions[date]=sess; save(); closeModal(); render();
+    showToast('Score saved!');
+  });
+}
+
+// ══════════════════════════════════════════════════════
+// ADMIN VIEW
+// ══════════════════════════════════════════════════════
+function adminHTML(){
+  var tabs=['roster','calendar','session','byes'];
+  var labels=['Roster','Calendar','Session','Bye Tracker'];
+  var h = '<div class="tabs">';
+  for(var i=0;i<tabs.length;i++)
+    h += '<button class="tab'+(S.adminTab===tabs[i]?' active':'')+'" data-atab="'+tabs[i]+'">'+labels[i]+'</button>';
+  h += '</div>';
+  if(S.adminTab==='roster')        h += rosterHTML();
+  else if(S.adminTab==='calendar') h += calendarHTML();
+  else if(S.adminTab==='session')  h += sessionHTML();
+  else if(S.adminTab==='byes')     h += byesHTML();
+  return h;
+}
+
+function bindAdmin(){
+  var atabs = document.querySelectorAll('[data-atab]');
+  for(var i=0;i<atabs.length;i++){
+    (function(b){ b.addEventListener('click', function(){ S.adminTab=b.dataset.atab; render(); }); })(atabs[i]);
+  }
+  // Roster
+  var addBtn=byId('add-player-btn'); if(addBtn) addBtn.addEventListener('click', function(){ openPlayerModal(null); });
+  var syncBtn=byId('sync-btn');      if(syncBtn) syncBtn.addEventListener('click', openSheetSync);
+  var exportBtn=byId('export-btn'); if(exportBtn) exportBtn.addEventListener('click', exportCSV);
+  var editBtns = document.querySelectorAll('[data-edit-pid]');
+  for(var i=0;i<editBtns.length;i++){
+    (function(b){ b.addEventListener('click', function(){ openPlayerModal(parseInt(b.dataset.editPid)); }); })(editBtns[i]);
+  }
+  var delBtns = document.querySelectorAll('[data-del-pid]');
+  for(var i=0;i<delBtns.length;i++){
+    (function(b){
+      b.addEventListener('click', function(){
+        var id=parseInt(b.dataset.delPid);
+        var p=getPlayer(id);
+        showModal('<h3>Remove Player</h3>'
+          +'<p style="margin-bottom:16px">Remove <strong>'+(p?esc(p.name):'this player')+'</strong> from the roster?</p>'
+          +'<div class="modal-btns">'
+          +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+          +'<button class="btn btn-danger" id="m-confirm">Remove</button>'
+          +'</div>');
+        byId('m-cancel').addEventListener('click', closeModal);
+        byId('m-confirm').addEventListener('click', function(){
+          S.players = S.players.filter(function(x){ return x.id!==id; });
+          save(); closeModal(); render();
+        });
+      });
+    })(delBtns[i]);
+  }
+  // Calendar
+  var seasonBtns = document.querySelectorAll('[data-season-btn]');
+  for(var i=0;i<seasonBtns.length;i++){
+    (function(b){ b.addEventListener('click', function(){ S.currentSeason=b.dataset.seasonBtn; save(); render(); }); })(seasonBtns[i]);
+  }
+  var calDates = document.querySelectorAll('[data-cal-date]');
+  for(var i=0;i<calDates.length;i++){
+    (function(b){
+      b.addEventListener('click', function(){
+        var key=b.dataset.calDate, s=S.currentSeason;
+        if(!S.seasons[s]) S.seasons[s]=[];
+        var idx=S.seasons[s].indexOf(key);
+        if(idx>=0) S.seasons[s].splice(idx,1); else S.seasons[s].push(key);
+        save(); render();
+      });
+    })(calDates[i]);
+  }
+  // Session
+  var dateSel=byId('session-date-sel');
+  if(dateSel) dateSel.addEventListener('change', function(){ S.selectedDate=dateSel.value; save(); render(); });
+  var settingIds=['s-type','s-rotate','s-courts','s-matches'];
+  for(var i=0;i<settingIds.length;i++){
+    var el=byId(settingIds[i]); if(el) el.addEventListener('change', saveSessionSettings);
+  }
+  var genBtn=byId('gen-btn');   if(genBtn) genBtn.addEventListener('click', generateAssignments);
+  var postBtn=byId('post-btn');
+  if(postBtn) postBtn.addEventListener('click', function(){
+    var date=S.selectedDate; if(!date) return;
+    var sess=getSession(date); sess.posted=!sess.posted;
+    S.sessions[date]=sess; save(); render();
+  });
+  var rsvpBtns = document.querySelectorAll('[data-rsvp-pid]');
+  for(var i=0;i<rsvpBtns.length;i++){
+    (function(b){
+      b.addEventListener('click', function(){
+        var pid=parseInt(b.dataset.rsvpPid), status=b.dataset.rsvpStatus;
+        if(!S.selectedDate) return;
+        var sess=getSession(S.selectedDate);
+        sess.rsvps[pid]=status;
+        S.sessions[S.selectedDate]=sess; save(); render();
+      });
+    })(rsvpBtns[i]);
+  }
+  bindScoreButtons();
+  bindHighlightSelect();
+}
+
+// ── ROSTER HTML ────────────────────────────────────────
+function rosterHTML(){
+  var h = '<div class="card"><h2>👥 Player Roster</h2>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<button class="btn btn-primary" id="add-player-btn">+ Add Player</button>'
+    +'<button class="btn btn-secondary" id="sync-btn">Copy from .CSV</button>'
+    +'<button class="btn btn-secondary" id="export-btn">Export .CSV</button>'
+    +'</div>';
+  if(!S.players.length){
+    h += '<div class="alert alert-info">No players yet. Add players or import from CSV.</div>';
+  } else {
+    h += '<table><tr><th>ID</th><th>Name</th><th>USTA</th><th>Fees</th><th>Actions</th></tr>';
+    for(var i=0;i<S.players.length;i++){
+      var p=S.players[i];
+      h += '<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.usta)+'</td><td>$'+(p.fees||0)+'</td>'
+        +'<td style="white-space:nowrap">'
+        +'<button class="btn btn-secondary btn-sm" data-edit-pid="'+p.id+'">Edit</button> '
+        +'<button class="btn btn-danger btn-sm" data-del-pid="'+p.id+'">Del</button>'
+        +'</td></tr>';
+    }
+    h += '</table>';
+  }
+  return h+'</div>';
+}
+
+// ── CALENDAR HTML ──────────────────────────────────────
+function calendarHTML(){
+  var s = S.currentSeason;
+  var activeArr = S.seasons[s]||[];
+  var activeSet = {};
+  for(var i=0;i<activeArr.length;i++) activeSet[activeArr[i]]=true;
+  var now=new Date(), y=now.getFullYear();
+  var monthSets = {
+    Spring:[[y,2],[y,3],[y,4]],
+    Summer:[[y,5],[y,6],[y,7]],
+    Fall:  [[y,8],[y,9],[y,10]],
+    Winter:[[y-1,11],[y,0],[y,1]]
+  };
+  var h = '<div class="card"><h2>📆 Season Calendar</h2>'
+    +'<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
+  for(var si=0;si<SEASONS.length;si++)
+    h += '<button class="season-btn'+(SEASONS[si]===s?' active':'')+'" data-season-btn="'+SEASONS[si]+'">'+SEASONS[si]+'</button>';
+  h += '</div><div class="alert alert-info" style="margin-bottom:12px">Click any Saturday to toggle it on/off for the <strong>'+s+'</strong> season.</div>';
+  var months = monthSets[s]||[];
+  for(var mi=0;mi<months.length;mi++){
+    var yr=months[mi][0], mo=months[mi][1];
+    var mname = new Date(yr,mo,1).toLocaleString('en-US',{month:'long',year:'numeric'});
+    h += '<div style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:6px">'+mname+'</div><div class="calendar-grid">';
+    var dayLabels=['Su','Mo','Tu','We','Th','Fr','Sa'];
+    for(var dl=0;dl<dayLabels.length;dl++) h += '<div class="cal-day cal-hdr">'+dayLabels[dl]+'</div>';
+    var first=new Date(yr,mo,1).getDay();
+    for(var fi=0;fi<first;fi++) h += '<div class="cal-day cal-other"></div>';
+    var daysInMonth=new Date(yr,mo+1,0).getDate();
+    for(var d=1;d<=daysInMonth;d++){
+      var isSat=new Date(yr,mo,d).getDay()===6;
+      var moStr=mo+1<10?'0'+(mo+1):''+(mo+1);
+      var dStr=d<10?'0'+d:''+d;
+      var key=yr+'-'+moStr+'-'+dStr;
+      if(isSat) h += '<div class="cal-day cal-sat'+(activeSet[key]?' active':'')+'" data-cal-date="'+key+'">'+d+'</div>';
+      else       h += '<div class="cal-day cal-other">'+d+'</div>';
+    }
+    h += '</div></div>';
+  }
+  return h+'</div>';
+}
+
+// ── SESSION HTML ───────────────────────────────────────
+function sessionHTML(){
+  var dates=(S.seasons[S.currentSeason]||[]).slice().sort();
+  if(!dates.length) return '<div class="card"><h2>⚙️ Session Setup</h2><div class="alert alert-info">No dates scheduled. Add dates in the Calendar tab.</div></div>';
+  if(!S.selectedDate || dates.indexOf(S.selectedDate)<0) S.selectedDate=dates[0];
+  var date=S.selectedDate, sess=getSession(date), inP=getInPlayers(date), allR=sess.rsvps;
+  var ppCourt=sess.type==='singles'?2:4;
+  var playPerRound=Math.min(inP.length, sess.courts*ppCourt);
+  var activeCourts=Math.floor(playPerRound/ppCourt);
+  var rounds=inP.length>=ppCourt ? Math.ceil((inP.length*sess.matchesPerPlayer)/Math.max(1,playPerRound)) : 0;
+  var dateOpts='';
+  for(var i=0;i<dates.length;i++) dateOpts+='<option value="'+dates[i]+'"'+(dates[i]===date?' selected':'')+'>'+fmtDate(dates[i])+'</option>';
+  var rsvpRows='';
+  for(var i=0;i<S.players.length;i++){
+    var p=S.players[i], st=allR[p.id]||'—';
+    rsvpRows+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.usta)+'</td>'
+      +'<td><span class="badge '+(st==='IN'?'badge-in':st==='OUT'?'badge-out':'')+'">'+(st==='—'?'—':st)+'</span></td>'
+      +'<td style="white-space:nowrap">'
+      +'<button class="btn btn-primary btn-sm" data-rsvp-pid="'+p.id+'" data-rsvp-status="IN">IN</button> '
+      +'<button class="btn btn-danger btn-sm" data-rsvp-pid="'+p.id+'" data-rsvp-status="OUT">OUT</button>'
+      +'</td></tr>';
+  }
+  var infoBar=inP.length>=ppCourt
+    ?'<div class="alert alert-info">📊 <strong>'+inP.length+'</strong> players IN → <strong>'+rounds+'</strong> rounds on <strong>'+activeCourts+'</strong> courts</div>'
+    :'<div class="alert alert-warn">Need at least '+ppCourt+' players marked IN to generate assignments.</div>';
+  var postBtnHTML=sess.assignments
+    ?'<button class="btn '+(sess.posted?'btn-danger':'btn-green')+'" id="post-btn">'+(sess.posted?'Unpost from Users':'Post to Users')+'</button>'
+    :'';
+  var h='<div class="card"><h2>⚙️ Session Setup</h2>'
+    +'<label>Select Date</label><select id="session-date-sel">'+dateOpts+'</select>'
+    +'<div class="card" style="border:1.5px solid #e8f5e9"><h2>RSVP List</h2>'
+    +(S.players.length
+      ?'<table><tr><th>ID</th><th>Name</th><th>USTA</th><th>Status</th><th>Set</th></tr>'+rsvpRows+'</table>'
+       +'<div style="margin-top:8px;font-weight:700;color:#1a5c2a">IN: '+inP.length+' players</div>'
+      :'<div class="alert alert-info">No players in roster.</div>')
+    +'</div>'
+    +'<div class="card" style="border:1.5px solid #e8f5e9"><h2>Settings</h2>'
+    +'<div class="form-row">'
+    +'<div><label>Match Type</label><select id="s-type">'
+    +'<option value="singles"'+(sess.type==='singles'?' selected':'')+'>Singles (2/court)</option>'
+    +'<option value="doubles"'+(sess.type==='doubles'?' selected':'')+'>Doubles (4/court)</option>'
+    +'</select></div>'
+    +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'>  '
+    +'<label>Partners</label><select id="s-rotate">'
+    +'<option value="0"'+(!sess.rotatePartners?' selected':'')+'>Same all day</option>'
+    +'<option value="1"'+(sess.rotatePartners?' selected':'')+'>Rotate each round</option>'
+    +'</select></div></div>'
+    +'<div class="form-row">'
+    +'<div><label>Courts Available</label><input id="s-courts" type="number" min="1" max="20" value="'+sess.courts+'"></div>'
+    +'<div><label>Matches per Player (1–8)</label><input id="s-matches" type="number" min="1" max="8" value="'+sess.matchesPerPlayer+'"></div>'
+    +'</div>'+infoBar+'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+    +'<button class="btn btn-primary" id="gen-btn">🎾 Generate Assignments</button>'+postBtnHTML
+    +'</div>';
+  if(sess.assignments){
+    var inp2=getInPlayers(date), hlOpts='<option value="">-- Select your name --</option>';
+    for(var i=0;i<inp2.length;i++) hlOpts+='<option value="'+inp2[i].id+'">'+fmtId(inp2[i].id)+' - '+esc(inp2[i].name)+'</option>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+      +'<strong style="color:#1a5c2a">Assignment Preview</strong>'
+      +'<span class="badge '+(sess.posted?'badge-in':'badge-out')+'">'+(sess.posted?'POSTED':'NOT POSTED')+'</span>'
+      +'</div>'
+      +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
+      +'<label>🔍 Highlight My Matches</label>'
+      +'<select id="hl-sel">'+hlOpts+'</select>'
+      +'</div>'
+      +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div>';
+  }
+  return h+'</div>';
+}
+
+function saveSessionSettings(){
+  var date=S.selectedDate; if(!date) return;
+  var sess=getSession(date);
+  var t=byId('s-type'), r=byId('s-rotate'), c=byId('s-courts'), m=byId('s-matches');
+  if(t) sess.type=t.value;
+  if(r) sess.rotatePartners=(r.value==='1');
+  if(c) sess.courts=Math.max(1,parseInt(c.value)||4);
+  if(m) sess.matchesPerPlayer=Math.min(8,Math.max(1,parseInt(m.value)||4));
+  var wrap=byId('rot-wrap');
+  if(wrap) wrap.style.display=(sess.type==='singles'?'none':'block');
+  S.sessions[date]=sess; save(); render();
+}
+
+// ── BYES HTML ──────────────────────────────────────────
+function byesHTML(){
+  var season=S.currentSeason;
+  var h='<div class="card"><h2>📊 Bye Tracker — '+season+'</h2>';
+  if(!S.players.length){
+    h+='<div class="alert alert-info">No players in roster.</div>';
+  } else {
+    var sorted=S.players.slice().sort(function(a,b){
+      return ((S.byeCounts[b.id]||{})[season]||0) - ((S.byeCounts[a.id]||{})[season]||0);
+    });
+    h+='<table><tr><th>ID</th><th>Name</th><th>Byes This Season</th></tr>';
+    for(var i=0;i<sorted.length;i++){
+      var p=sorted[i];
+      h+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+((S.byeCounts[p.id]||{})[season]||0)+'</td></tr>';
+    }
+    h+='</table>';
+  }
+  return h+'</div>';
+}
+
+// ── ASSIGNMENT ENGINE ──────────────────────────────────
+function generateAssignments(){
+  var date=S.selectedDate; if(!date){showToast('No date selected.');return;}
+  var sess=getSession(date), inP=getInPlayers(date), ppCourt=sess.type==='singles'?2:4;
+  if(inP.length<ppCourt){showToast('Need at least '+ppCourt+' players marked IN.');return;}
+  var numCourts=sess.courts, mpp=sess.matchesPerPlayer;
+  var playPerRound=Math.min(inP.length,numCourts*ppCourt);
+  var activeCourts=Math.floor(playPerRound/ppCourt);
+  var totalRounds=Math.ceil((inP.length*mpp)/Math.max(1,playPerRound));
+  var sorted=inP.slice().sort(function(a,b){return parseFloat(b.usta)-parseFloat(a.usta);});
+  var playCounts={}, todayByes={};
+  for(var i=0;i<sorted.length;i++){ playCounts[sorted[i].id]=0; todayByes[sorted[i].id]=0; }
+  if(!S.byeCounts) S.byeCounts={};
+  for(var i=0;i<sorted.length;i++){ if(!S.byeCounts[sorted[i].id]) S.byeCounts[sorted[i].id]={}; }
+  var seasonByes={};
+  for(var i=0;i<sorted.length;i++) seasonByes[sorted[i].id]=(S.byeCounts[sorted[i].id][S.currentSeason])||0;
+  var allRounds=[];
+  for(var r=0;r<totalRounds;r++){
+    var need=inP.length-activeCourts*ppCourt, byes=[];
+    if(need>0){
+      var elig=[];
+      for(var i=0;i<sorted.length;i++) if(todayByes[sorted[i].id]===0) elig.push(sorted[i]);
+      elig.sort(function(a,b){
+        var d=(seasonByes[a.id]||0)-(seasonByes[b.id]||0);
+        return d!==0?d:playCounts[b.id]-playCounts[a.id];
+      });
+      for(var ei=0;ei<need&&ei<elig.length;ei++) byes.push(elig[ei].id);
+    }
+    var playing=[];
+    for(var i=0;i<sorted.length;i++) if(byes.indexOf(sorted[i].id)<0) playing.push(sorted[i]);
+    allRounds.push({courts:assignCourts(playing,activeCourts,ppCourt), byes:byes});
+    for(var bi=0;bi<byes.length;bi++){ todayByes[byes[bi]]++; seasonByes[byes[bi]]=(seasonByes[byes[bi]]||0)+1; }
+    for(var pi=0;pi<playing.length;pi++) playCounts[playing[pi].id]++;
+  }
+  for(var i=0;i<sorted.length;i++){
+    if(!S.byeCounts[sorted[i].id]) S.byeCounts[sorted[i].id]={};
+    S.byeCounts[sorted[i].id][S.currentSeason]=seasonByes[sorted[i].id]||0;
+  }
+  sess.assignments={rounds:allRounds};
+  sess.scores={};
+  sess.posted=false;
+  S.sessions[date]=sess; save(); render();
+  showToast('Assignments generated!');
+}
+
+function assignCourts(players, numCourts, ppCourt){
+  var sorted=players.slice().sort(function(a,b){return parseFloat(b.usta)-parseFloat(a.usta);});
+  var courts=[];
+  if(ppCourt===2){
+    for(var i=0;i<numCourts&&i<Math.floor(sorted.length/2);i++)
+      courts.push({teams:[[sorted[i].id],[sorted[sorted.length-1-i].id]]});
+  } else {
+    var half=Math.floor(sorted.length/2);
+    var top=sorted.slice(0,half), bot=sorted.slice(half).reverse();
+    var teams=[];
+    for(var i=0;i<Math.min(top.length,bot.length);i++) teams.push([top[i].id,bot[i].id]);
+    var n=teams.length;
+    for(var i=0;i<numCourts&&i<Math.floor(n/2);i++) courts.push({teams:[teams[i],teams[n-1-i]]});
+  }
+  return courts;
+}
+
+// ── PLAYER MODAL ───────────────────────────────────────
+function openPlayerModal(id){
+  var p=(id!==null)?getPlayer(id):null;
+  var ratings=['2.0','2.5','3.0','3.5','4.0','4.5','5.0'];
+  var ustaOpts='';
+  for(var i=0;i<ratings.length;i++)
+    ustaOpts+='<option'+(p&&p.usta===ratings[i]?' selected':'')+'>'+ratings[i]+'</option>';
+  showModal('<h3>'+(p?'Edit':'Add')+' Player</h3>'
+    +'<label>Name</label><input id="m-name" value="'+(p?esc(p.name):'')+'" placeholder="Full name">'
+    +'<label>USTA Rating</label><select id="m-usta">'+ustaOpts+'</select>'
+    +'<label>Fees Paid ($)</label><input id="m-fees" type="number" min="0" value="'+(p?p.fees||0:0)+'">'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-save">'+(p?'Save':'Add')+'</button>'
+    +'</div>');
+  byId('m-cancel').addEventListener('click', closeModal);
+  byId('m-save').addEventListener('click', function(){
+    var name=byId('m-name').value.trim();
+    var usta=byId('m-usta').value;
+    var fees=parseFloat(byId('m-fees').value)||0;
+    if(!name){showToast('Name is required.');return;}
+    if(id!==null){
+      var px=getPlayer(id);
+      if(px){px.name=name;px.usta=usta;px.fees=fees;}
+    } else {
+      var used={};
+      for(var i=0;i<S.players.length;i++) used[S.players[i].id]=true;
+      var nid=1; while(used[nid]&&nid<100) nid++;
+      S.players.push({id:nid,name:name,usta:usta,fees:fees});
+    }
+    save(); closeModal(); render();
+  });
+}
+
+// ── CSV IMPORT ─────────────────────────────────────────
+function openSheetSync(){
+  showModal('<h3>📋 Copy from .CSV</h3>'
+    +'<div class="alert alert-info" style="margin-bottom:10px">'
+    +'<strong>How to import:</strong><br>'
+    +'1. Open your CSV file in Excel or Google Sheets<br>'
+    +'2. Select all data including the header row (Ctrl+A)<br>'
+    +'3. Copy (Ctrl+C)<br>'
+    +'4. Paste below and click Import<br><br>'
+    +'Column order: <strong>Player ID, Name, USTA Rating, Fees Paid</strong>'
+    +'</div>'
+    +'<label>Paste CSV Data</label>'
+    +'<textarea id="m-csv" rows="10" placeholder="Player ID&#9;Name&#9;USTA Rating&#9;Fees Paid&#10;1&#9;John Smith&#9;3.5&#9;150"></textarea>'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-sync">Import</button>'
+    +'</div>');
+  byId('m-cancel').addEventListener('click', closeModal);
+  byId('m-sync').addEventListener('click', function(){
+    var raw=byId('m-csv').value.trim();
+    if(!raw){showToast('Please paste your CSV data.');return;}
+    var firstLine=raw.split('\n')[0];
+    var delim=firstLine.indexOf('\t')>=0?'\t':',';
+    var rows=parseDelimited(raw,delim);
+    if(!rows.length){showToast('No data rows found. Make sure you included a header row.');return;}
+    var result=importRows(rows);
+    save(); closeModal(); render();
+    showToast('Import complete! Added: '+result.added+'  Updated: '+result.updated+'  Skipped: '+result.skipped);
+  });
+}
+
+function parseDelimited(text,delim){
+  var lines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
+  var rows=[];
+  for(var i=1;i<lines.length;i++){
+    var line=lines[i].trim(); if(!line) continue;
+    var cols=line.split(delim);
+    for(var j=0;j<cols.length;j++) cols[j]=cols[j].trim().replace(/^"|"$/g,'');
+    rows.push(cols);
+  }
+  return rows;
+}
+
+function importRows(rows){
+  var added=0,updated=0,skipped=0;
+  for(var i=0;i<rows.length;i++){
+    var row=rows[i];
+    if(row.length<2){skipped++;continue;}
+    var pid=parseInt(row[0]), name=(row[1]||'').trim(), usta=(row[2]||'3.0').trim(), fees=parseFloat(row[3])||0;
+    if(!pid||!name){skipped++;continue;}
+    var ex=getPlayer(pid);
+    if(ex){ex.name=name;ex.usta=usta;ex.fees=fees;updated++;}
+    else{S.players.push({id:pid,name:name,usta:usta,fees:fees});added++;}
+  }
+  return{added:added,updated:updated,skipped:skipped};
+}
+
+// ── CSV EXPORT ─────────────────────────────────────────
+function exportCSV(){
+  if(!S.players.length){showToast('No players to export.');return;}
+  var rows=[['Player ID','Name','USTA Rating','Fees Paid']];
+  for(var i=0;i<S.players.length;i++){
+    var p=S.players[i];
+    rows.push([fmtId(p.id), p.name, p.usta, p.fees||0]);
+  }
+  var csv='';
+  for(var i=0;i<rows.length;i++){
+    var cols=[];
+    for(var j=0;j<rows[i].length;j++) cols.push('"'+String(rows[i][j]).replace(/"/g,'""')+'"');
+    csv+=cols.join(',')+'\r\n';
+  }
+  try{
+    var blob=new Blob([csv],{type:'text/csv'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url; a.download='dmv_tennis_roster.csv';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showToast('Roster exported!');
+  } catch(e){ showToast('Export not supported in this browser.'); }
+}
+
+// ── AUTH ───────────────────────────────────────────────
+byId('admin-btn').addEventListener('click', function(){
+  if(S.isAdmin){S.isAdmin=false;save();render();return;}
+  showModal('<h3>🔐 Admin Login</h3>'
+    +'<label>Password</label>'
+    +'<input type="password" id="m-pass" placeholder="Enter password">'
+    +'<div class="modal-btns">'
+    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+    +'<button class="btn btn-primary" id="m-login">Login</button>'
+    +'</div>');
+  setTimeout(function(){var p=byId('m-pass');if(p)p.focus();},100);
+  byId('m-cancel').addEventListener('click', closeModal);
+  byId('m-login').addEventListener('click', function(){
+    var p=byId('m-pass');
+    if(p&&p.value===PASS){S.isAdmin=true;save();closeModal();render();}
+    else showToast('Incorrect password.');
+  });
+});
+
+render();
+</script>
+</body>
+</html>
