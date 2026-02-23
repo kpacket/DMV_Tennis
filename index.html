@@ -132,6 +132,7 @@ td{padding:8px;border-bottom:1px solid #eee;vertical-align:middle}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal-overlay.open{display:flex}
 .modal{background:#fff;border-radius:12px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow-y:auto}
+.modal.modal-wide{max-width:680px}
 .modal h3{color:#1a5c2a;margin-bottom:14px}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
 .season-btn{padding:6px 14px;border-radius:16px;border:2px solid #1a5c2a;cursor:pointer;font-weight:600;font-size:.85rem;background:#fff;color:#1a5c2a;-webkit-tap-highlight-color:transparent}
@@ -383,7 +384,7 @@ function showToast(msg){
 }
 
 // ══ MODAL ══════════════════════════════════════════════
-function showModal(html){ byId('modal-body').innerHTML=html; byId('modal-overlay').classList.add('open'); }
+function showModal(html,wide){ var m=byId('modal-body').parentElement; if(m){ m.classList.toggle('modal-wide',!!wide); } byId('modal-body').innerHTML=html; byId('modal-overlay').classList.add('open'); }
 function closeModal(){ byId('modal-overlay').classList.remove('open'); byId('modal-body').innerHTML=''; }
 byId('modal-overlay').addEventListener('click',function(e){ if(e.target.id==='modal-overlay') closeModal(); });
 
@@ -708,6 +709,12 @@ function bindAdmin(){
     var el=byId(id); if(el) el.addEventListener('change',saveSessionSettings);
   });
   var genBtn=byId('gen-btn'); if(genBtn) genBtn.addEventListener('click',generateAssignments);
+  var clearAssignBtn=byId('clear-assign-btn'); if(clearAssignBtn) clearAssignBtn.addEventListener('click',function(){
+    var date=S.selectedDate; if(!date) return;
+    var sess=getSession(date);
+    sess.assignments=null; sess.scores={}; sess.posted=false;
+    S.sessions[date]=sess; save(); showToast('Court assignment cleared.'); render();
+  });
   var mpBtn=byId('manual-partners-btn'); if(mpBtn) mpBtn.addEventListener('click',openManualPartnersModal);
   var tbBtn=byId('team-battle-btn'); if(tbBtn) tbBtn.addEventListener('click',openTeamBattleSetup);
   var pcaBtn=byId('players-choice-admin-btn'); if(pcaBtn) pcaBtn.addEventListener('click',openPlayersChoiceAdmin);
@@ -825,13 +832,14 @@ function sessionHTML(){
     +'<div class="card" style="border:1.5px solid #e8f5e9"><h2>Settings</h2>'
     +'<div class="form-row">'
     +'<div><label>Match Type</label><select id="s-type"><option value="singles"'+(sess.type==='singles'?' selected':'')+'>Singles</option><option value="doubles"'+(sess.type==='doubles'?' selected':'')+'>Doubles</option></select></div>'
-    +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'><label>Mode</label><select id="s-rotate">'+'<option value="0"'+(!sess.rotatePartners&&!sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Same all day</option>'+'<option value="1"'+(sess.rotatePartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Rotate each round</option>'+'<option value="manual"'+(sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Manual (Admin assigns)</option>'+'<option value="teamBattle"'+(sess.teamBattle?' selected':'')+'>Team Battle (A vs B)</option>'+'<option value="playersChoice"'+(sess.playersChoice?' selected':'')+'>Players Choice</option>'+'</select></div>'
+    +'<div id="rot-wrap"'+(sess.type==='singles'?' style="display:none"':'')+'><label>Mode</label><select id="s-rotate">'+'<option value="0"'+(!sess.rotatePartners&&!sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>AutoAssign: same partner</option>'+'<option value="1"'+(sess.rotatePartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>AutoAssign: reassign each round</option>'+'<option value="manual"'+(sess.manualPartners&&!sess.teamBattle&&!sess.playersChoice?' selected':'')+'>Manual (Admin assigns)</option>'+'<option value="teamBattle"'+(sess.teamBattle?' selected':'')+'>Team Battle (A vs B)</option>'+'<option value="playersChoice"'+(sess.playersChoice?' selected':'')+'>Players Choice</option>'+'</select></div>'
     +'</div><div class="form-row">'
     +'<div><label>Courts Available</label><input id="s-courts" type="number" min="1" max="20" value="'+sess.courts+'"></div>'
     +'<div><label>Matches per Player (1–8)</label><input id="s-matches" type="number" min="1" max="8" value="'+sess.matchesPerPlayer+'"></div>'
     +'</div>'+infoBar+'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
-    +'<button class="btn btn-primary" id="gen-btn">🎾 Auto Assign Partners</button>'
+    +'<button class="btn btn-primary" id="gen-btn">🎾 Generate Court Assignment</button>'
+    +(sess.assignments?'<button class="btn btn-danger" id="clear-assign-btn">🗑 Clear Assignment</button>':'')
     +(sess.type!=='singles'?'<button class="btn btn-secondary" id="manual-partners-btn">✋ Manually Assign Partners</button>':'')
     +(sess.teamBattle?'<button class="btn btn-secondary" id="team-battle-btn">⚔️ Setup Team Battle</button>':'')
     +(sess.playersChoice?'<button class="btn btn-secondary" id="players-choice-admin-btn">📋 View Players Choice</button>':'')
@@ -854,10 +862,16 @@ function saveSessionSettings(){
   var t=byId('s-type'),r=byId('s-rotate'),c=byId('s-courts'),m=byId('s-matches');
   if(t) sess.type=t.value;
   if(r){
+    var prevMode=[sess.rotatePartners,sess.manualPartners,sess.teamBattle,sess.playersChoice].join(',');
     sess.rotatePartners=(r.value==='1');
     sess.manualPartners=(r.value==='manual');
     sess.teamBattle=(r.value==='teamBattle');
     sess.playersChoice=(r.value==='playersChoice');
+    var newMode=[sess.rotatePartners,sess.manualPartners,sess.teamBattle,sess.playersChoice].join(',');
+    if(prevMode!==newMode && sess.assignments){
+      sess.assignments=null; sess.scores={}; sess.posted=false;
+      showToast('Mode changed — court assignment cleared.');
+    }
   }
   if(c) sess.courts=Math.max(1,parseInt(c.value)||4);
   if(m) sess.matchesPerPlayer=Math.min(8,Math.max(1,parseInt(m.value)||4));
@@ -1466,9 +1480,11 @@ function openTeamBattleSetup(){
     var h='';
     for(var i=0;i<inP.length;i++){
       var p=inP[i], checked=team.indexOf(p.id)>=0;
-      h+='<label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">'
-        +'<input type="checkbox" class="'+prefix+'-chk" value="'+p.id+'"'+(checked?' checked':'')+'> '
-        +fmtId(p.id)+' '+esc(p.name)
+      var chipColor=prefix==='ta'?'#dbeafe':'#fee2e2';
+      var borderColor=prefix==='ta'?'#1e40af':'#991b1b';
+      h+='<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;background:'+(checked?chipColor:'transparent')+';border:1.5px solid '+(checked?borderColor:'transparent')+'">'
+        +'<input type="checkbox" class="'+prefix+'-chk" value="'+p.id+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer"> '
+        +'<span style="font-size:.88rem">'+fmtId(p.id)+' '+esc(p.name)+'</span>'
         +'</label>';
     }
     return h;
@@ -1481,14 +1497,14 @@ function openTeamBattleSetup(){
     +'<label style="font-size:.8rem">Captain</label>'
     +'<select id="cap-a-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainA)+'</select>'
     +'<label style="font-size:.8rem">Players</label>'
-    +'<div style="max-height:180px;overflow-y:auto">'+teamCheckboxes(teamA,'ta')+'</div>'
+    +'<div style="max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:6px">'+teamCheckboxes(teamA,'ta')+'</div>'
     +'</div>'
     +'<div style="border:2px solid #991b1b;border-radius:8px;padding:10px">'
     +'<div style="font-weight:700;color:#991b1b;margin-bottom:8px">🔴 Team B</div>'
     +'<label style="font-size:.8rem">Captain</label>'
     +'<select id="cap-b-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainB)+'</select>'
     +'<label style="font-size:.8rem">Players</label>'
-    +'<div style="max-height:180px;overflow-y:auto">'+teamCheckboxes(teamB,'tb')+'</div>'
+    +'<div style="max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:6px">'+teamCheckboxes(teamB,'tb')+'</div>'
     +'</div>'
     +'</div>'
     +'<div class="alert alert-info" style="margin-top:10px;font-size:.82rem">Players can be on both teams or neither — checkboxes are independent.</div>'
@@ -1497,7 +1513,7 @@ function openTeamBattleSetup(){
     +'<button class="btn btn-primary" id="m-tb-save">Save & Generate</button>'
     +'</div>';
 
-  showModal(body);
+  showModal(body,true);
   byId('m-cancel').addEventListener('click',closeModal);
   byId('m-tb-save').addEventListener('click',function(){
     var newTeamA=[], newTeamB=[];
