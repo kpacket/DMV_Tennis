@@ -319,6 +319,17 @@ function initFirebaseListener() {
       S.pointsConfig = data.pointsConfig  || {matchWin:3,gameWin:1,attendance:1};
     }
     setSyncDot('synced');
+    // Refresh PC court grids live if visible
+    (function(){
+      var upD=getUpcoming();
+      if(!upD) return;
+      var upS=getSession(upD);
+      if(!upS.playersChoice) return;
+      var ag=byId('pc-court-grid');
+      if(ag){ ag.innerHTML=playersChoiceCourtGrid(upS,upD,true); bindScoreButtons(); }
+      var ug=byId('pc-user-grid');
+      if(ug){ ug.innerHTML=playersChoiceCourtGrid(upS,upD,false); }
+    })();
     if(!_loaded){
       _loaded = true;
       document.getElementById('loading').style.display = 'none';
@@ -349,8 +360,8 @@ function fmtDate(d){
   catch(e){ return d||''; }
 }
 function getSession(date){
-  if(!date) return {type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
-  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false};
+  if(!date) return {type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false,lockedTeams:[],noByePids:[]};
+  if(!S.sessions[date]) S.sessions[date]={type:'doubles',rotatePartners:true,manualPartners:false,teamBattle:false,playersChoice:false,teamA:[],teamB:[],captainA:null,captainB:null,courts:4,matchesPerPlayer:4,rsvps:{},assignments:null,scores:{},posted:false,lockedTeams:[],noByePids:[]};
   var sess=S.sessions[date];
   if(!sess.scores) sess.scores={};
   if(!sess.rsvps) sess.rsvps={};
@@ -553,6 +564,9 @@ function scheduleHTML(isAdmin){
   var date=isAdmin?S.selectedDate:getUpcoming();
   if(!date) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No date available.</div></div>';
   var sess=getSession(date);
+  if(sess.playersChoice){
+    return playersChoiceCourtGrid(sess, date, isAdmin);
+  }
   if(!isAdmin&&(!sess.posted||!sess.assignments))
     return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
   if(!sess.assignments)
@@ -716,6 +730,7 @@ function bindAdmin(){
     S.sessions[date]=sess; save(); showToast('Court assignment cleared.'); render();
   });
   var mpBtn=byId('manual-partners-btn'); if(mpBtn) mpBtn.addEventListener('click',openManualPartnersModal);
+  var aaOptBtn=byId('aa-options-btn'); if(aaOptBtn) aaOptBtn.addEventListener('click',openAutoAssignOptions);
   var tbBtn=byId('team-battle-btn'); if(tbBtn) tbBtn.addEventListener('click',openTeamBattleSetup);
   var pcaBtn=byId('players-choice-admin-btn'); if(pcaBtn) pcaBtn.addEventListener('click',openPlayersChoiceAdmin);
   var postBtn=byId('post-btn');
@@ -840,9 +855,10 @@ function sessionHTML(){
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
     +'<button class="btn btn-primary" id="gen-btn">🎾 Generate Court Assignment</button>'
     +(sess.assignments?'<button class="btn btn-danger" id="clear-assign-btn">🗑 Clear Assignment</button>':'')
+    +(!sess.teamBattle&&!sess.playersChoice&&sess.type!=='singles'?'<button class="btn btn-secondary" id="aa-options-btn">⚙️ AutoAssign Options</button>':'')
     +(sess.type!=='singles'?'<button class="btn btn-secondary" id="manual-partners-btn">✋ Manually Assign Partners</button>':'')
     +(sess.teamBattle?'<button class="btn btn-secondary" id="team-battle-btn">⚔️ Setup Team Battle</button>':'')
-    +(sess.playersChoice?'<button class="btn btn-secondary" id="players-choice-admin-btn">📋 View Players Choice</button>':'')
+    +(sess.playersChoice?'<button class="btn btn-secondary" id="players-choice-admin-btn">📋 Submissions</button>':'')
     +postBtnHTML+'</div>';
   if(sess.assignments){
     var inp2=getInPlayers(date), hlOpts='<option value="">-- Select your name --</option>';
@@ -853,6 +869,9 @@ function sessionHTML(){
       +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
       +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts+'</select></div>'
       +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div>';
+  }
+  if(sess.playersChoice){
+    h+='<div id="pc-court-grid">'+playersChoiceCourtGrid(sess,date,true)+'</div>';
   }
   return h+'</div>';
 }
@@ -1022,6 +1041,120 @@ function byesHTML(){
 }
 
 
+
+// ── AUTOASSIGN OPTIONS MODAL ────────────────────────────
+function openAutoAssignOptions(){
+  var date=S.selectedDate; if(!date){ showToast('No date selected.'); return; }
+  var sess=getSession(date);
+  var inP=getInPlayers(date);
+  if(!inP.length){ showToast('No players marked IN.'); return; }
+  var lockedTeams=sess.lockedTeams||[];
+  var noByePids=sess.noByePids||[];
+  var ppCourt=sess.type==='singles'?2:4;
+  var half=ppCourt/2; // players per team = 2 for doubles, 1 for singles
+
+  // Build player options
+  var pOpts='<option value="">— select —</option>';
+  for(var i=0;i<inP.length;i++) pOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' '+esc(inP[i].name)+'</option>';
+
+  // Render locked teams rows
+  function lockedRows(){
+    var h='';
+    for(var li=0;li<lockedTeams.length;li++){
+      var lt=lockedTeams[li];
+      var names=lt.map(function(id){ var p=getPlayer(id); return p?esc(p.name):fmtId(id); }).join(' & ');
+      h+='<div class="locked-row" style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee">'+
+        '<span style="flex:1;font-size:.88rem">🔒 '+names+'</span>'+
+        '<button class="btn btn-danger btn-sm locked-del-btn" data-li="'+li+'">✕</button>'+
+        '</div>';
+    }
+    return h||'<div style="color:#aaa;font-size:.82rem;padding:4px 0">No locked teams yet.</div>';
+  }
+
+  // No-bye checkboxes
+  function noByeChecks(){
+    var h='';
+    for(var i=0;i<inP.length;i++){
+      var checked=noByePids.indexOf(inP[i].id)>=0;
+      h+='<label style="display:flex;align-items:center;gap:8px;padding:3px 0;cursor:pointer">'+
+        '<input type="checkbox" class="no-bye-chk" value="'+inP[i].id+'"'+(checked?' checked':'')+' style="width:15px;height:15px"> '+
+        '<span style="font-size:.88rem">'+fmtId(inP[i].id)+' '+esc(inP[i].name)+'</span>'+
+        '</label>';
+    }
+    return h;
+  }
+
+  // Build add-locked-team selects (one per slot in a team)
+  function addLockedSelects(){
+    var hh='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    for(var si2=0;si2<half;si2++){
+      hh+='<select id="lt-p'+si2+'" style="padding:6px;flex:1;border-radius:6px;border:1.5px solid #ccc">'+pOpts+'</select>';
+    }
+    hh+='<button class="btn btn-green btn-sm" id="lt-add-btn">+ Add</button></div>';
+    return hh;
+  }
+
+  var body='<h3>⚙️ AutoAssign Options</h3>';
+
+  // Locked teams section
+  body+='<div style="margin-bottom:16px">'+
+    '<div style="font-weight:700;margin-bottom:6px">🔒 Locked Teams (stay together all rounds)</div>'+
+    '<div id="locked-rows-wrap">'+lockedRows()+'</div>'+
+    '<div style="margin-top:8px"><label style="font-size:.8rem">Add locked team ('+half+' players):</label>'+addLockedSelects()+'</div>'+
+    '</div>';
+
+  // No-bye section
+  body+='<div style="margin-bottom:16px">'+
+    '<div style="font-weight:700;margin-bottom:6px">⚡ Never sit out (leave early protection)</div>'+
+    '<div style="max-height:180px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px">'+noByeChecks()+'</div>'+
+    '</div>';
+
+  body+='<div class="modal-btns">'+
+    '<button class="btn btn-secondary" id="m-cancel">Cancel</button>'+
+    '<button class="btn btn-primary" id="aa-opts-save">Save Options</button>'+
+    '</div>';
+
+  showModal(body,true);
+
+  byId('m-cancel').addEventListener('click',closeModal);
+
+  // Delete locked team
+  document.querySelectorAll('.locked-del-btn').forEach(function(btn){
+    btn.addEventListener('click',function(){
+      var li=parseInt(btn.dataset.li);
+      lockedTeams.splice(li,1);
+      byId('locked-rows-wrap').innerHTML=lockedRows();
+      // re-bind delete buttons
+      document.querySelectorAll('.locked-del-btn').forEach(function(b2){
+        b2.addEventListener('click',arguments.callee);
+      });
+    });
+  });
+
+  // Add locked team
+  byId('lt-add-btn').addEventListener('click',function(){
+    var ids=[];
+    for(var si3=0;si3<half;si3++){
+      var selEl=byId('lt-p'+si3);
+      if(selEl&&parseInt(selEl.value)) ids.push(parseInt(selEl.value));
+    }
+    if(ids.length<2){ showToast('Select '+half+' different players.'); return; }
+    if(new Set(ids).size!==ids.length){ showToast('Please select different players.'); return; }
+    lockedTeams.push(ids);
+    byId('locked-rows-wrap').innerHTML=lockedRows();
+    for(var si4=0;si4<half;si4++){ var selEl2=byId('lt-p'+si4); if(selEl2) selEl2.value=''; }
+  });
+
+  // Save
+  byId('aa-opts-save').addEventListener('click',function(){
+    var newNoByePids=[];
+    document.querySelectorAll('.no-bye-chk:checked').forEach(function(c){ newNoByePids.push(parseInt(c.value)); });
+    sess.lockedTeams=lockedTeams;
+    sess.noByePids=newNoByePids;
+    S.sessions[date]=sess; save(); closeModal(); showToast('AutoAssign options saved!');
+  });
+}
+
 // ── ASSIGNMENT ENGINE ──────────────────────────────────
 function generateAssignments(){
   var date=S.selectedDate; if(!date){ showToast('No date selected.'); return; }
@@ -1030,34 +1163,154 @@ function generateAssignments(){
   var numCourts=sess.courts, mpp=sess.matchesPerPlayer;
   var playPerRound=Math.min(inP.length,numCourts*ppCourt), activeCourts=Math.floor(playPerRound/ppCourt);
   var totalRounds=Math.ceil((inP.length*mpp)/Math.max(1,playPerRound));
+
+  // Session options
+  var lockedTeams=sess.lockedTeams||[];   // array of [pid,pid] pairs
+  var noByePids=sess.noByePids||[];       // array of pids that must never sit out
+  var rotate=sess.rotatePartners;         // true = new partners each round
+
+  // Validate noByePids don't conflict with bye math
+  var need=inP.length-activeCourts*ppCourt;
+  if(need>0){
+    showToast('Note: '+need+' player'+(need>1?'s':'')+' will sit out each round (byes needed due to player count).');
+  }
+
+  // Build sorted pool; locked-team members stay as units
   var sorted=inP.slice().sort(function(a,b){ return parseFloat(b.usta)-parseFloat(a.usta); });
-  var playCounts={}, todayByes={};
-  for(var i=0;i<sorted.length;i++){ playCounts[sorted[i].id]=0; todayByes[sorted[i].id]=0; }
   if(!S.byeCounts) S.byeCounts={};
   for(var i=0;i<sorted.length;i++) if(!S.byeCounts[sorted[i].id]) S.byeCounts[sorted[i].id]={};
   var seasonByes={};
   for(var i=0;i<sorted.length;i++) seasonByes[sorted[i].id]=(S.byeCounts[sorted[i].id][S.currentSeason])||0;
+  var playCounts={}, todayByes={};
+  for(var i=0;i<sorted.length;i++){ playCounts[sorted[i].id]=0; todayByes[sorted[i].id]=0; }
+
+  // Build set of locked-team members (for rotation logic)
+  var lockedMemberOf={};
+  for(var li=0;li<lockedTeams.length;li++){
+    var lt=lockedTeams[li];
+    for(var lj=0;lj<lt.length;lj++) lockedMemberOf[lt[lj]]=li;
+  }
+
   var allRounds=[];
+  // For rotation: track last-round partners per player
+  var lastPartner={};
+
   for(var r=0;r<totalRounds;r++){
-    var need=inP.length-activeCourts*ppCourt, byes=[];
-    if(need>0){
-      var elig=[];
-      for(var i=0;i<sorted.length;i++) if(todayByes[sorted[i].id]===0) elig.push(sorted[i]);
-      elig.sort(function(a,b){ var d=(seasonByes[a.id]||0)-(seasonByes[b.id]||0); return d!==0?d:playCounts[b.id]-playCounts[a.id]; });
-      for(var ei=0;ei<need&&ei<elig.length;ei++) byes.push(elig[ei].id);
+    // --- Determine byes (never put noByePids on bye if avoidable) ---
+    var byeCount=inP.length-activeCourts*ppCourt;
+    var byes=[];
+    if(byeCount>0){
+      // candidates: prefer NOT noByePids and those with fewest today byes
+      var byeCandidates=sorted.slice().sort(function(a,b){
+        var aNoBye=noByePids.indexOf(a.id)>=0?1:0;
+        var bNoBye=noByePids.indexOf(b.id)>=0?1:0;
+        if(aNoBye!==bNoBye) return aNoBye-bNoBye; // push noByePids to end
+        var d=(seasonByes[a.id]||0)-(seasonByes[b.id]||0);
+        return d!==0?d:playCounts[b.id]-playCounts[a.id];
+      });
+      // Collect byes respecting locked teams (whole locked team sits if one sits)
+      var byeSet={};
+      for(var bi=0;bi<byeCandidates.length&&Object.keys(byeSet).length<byeCount;bi++){
+        var cid=byeCandidates[bi].id;
+        if(byeSet[cid]) continue;
+        var ltIdx=lockedMemberOf[cid];
+        if(ltIdx!==undefined){
+          // bye the whole locked team together
+          var lt=lockedTeams[ltIdx];
+          var wouldBye=Object.keys(byeSet).length+lt.length;
+          if(wouldBye<=byeCount){ for(var lj=0;lj<lt.length;lj++) byeSet[lt[lj]]=true; }
+        } else {
+          byeSet[cid]=true;
+        }
+      }
+      byes=Object.keys(byeSet).map(Number);
     }
-    var playing=[];
-    for(var i=0;i<sorted.length;i++) if(byes.indexOf(sorted[i].id)<0) playing.push(sorted[i]);
-    allRounds.push({courts:assignCourts(playing,activeCourts,ppCourt),byes:byes});
+
+    var playing=sorted.filter(function(p){ return byes.indexOf(p.id)<0; });
+
+    var roundCourts;
+    if(!rotate){
+      // Same partner mode — same pairs throughout
+      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, null);
+    } else {
+      // Rotate mode — try to give each player a different partner than last round
+      roundCourts=assignCourtsWithLocked(playing, activeCourts, ppCourt, lockedTeams, lastPartner);
+      // Update lastPartner tracking
+      for(var ci=0;ci<roundCourts.length;ci++){
+        var ct=roundCourts[ci];
+        for(var ti=0;ti<ct.teams.length;ti++){
+          var team=ct.teams[ti];
+          for(var pi=0;pi<team.length;pi++){
+            for(var pi2=0;pi2<team.length;pi2++){
+              if(pi!==pi2) lastPartner[team[pi]]=team[pi2];
+            }
+          }
+        }
+      }
+    }
+
+    allRounds.push({courts:roundCourts, byes:byes});
     for(var bi=0;bi<byes.length;bi++){ todayByes[byes[bi]]++; seasonByes[byes[bi]]=(seasonByes[byes[bi]]||0)+1; }
     for(var pi=0;pi<playing.length;pi++) playCounts[playing[pi].id]++;
   }
+
   for(var i=0;i<sorted.length;i++){
-    if(!S.byeCounts[sorted[i].id]) S.byeCounts[sorted[i].id]={};
     S.byeCounts[sorted[i].id][S.currentSeason]=seasonByes[sorted[i].id]||0;
   }
   sess.assignments={rounds:allRounds}; sess.scores={}; sess.posted=false;
   S.sessions[date]=sess; save(); showToast('Assignments generated!');
+}
+
+function assignCourtsWithLocked(playing, numCourts, ppCourt, lockedTeams, lastPartner){
+  // Build "units" — locked teams travel as one unit, singles as individuals
+  var units=[], usedInUnit={};
+  for(var li=0;li<lockedTeams.length;li++){
+    var lt=lockedTeams[li];
+    var allPlaying=true;
+    for(var lj=0;lj<lt.length;lj++) if(!playing.some(function(p){ return p.id===lt[lj]; })){ allPlaying=false; break; }
+    if(allPlaying){
+      for(var lj=0;lj<lt.length;lj++) usedInUnit[lt[lj]]=true;
+      units.push({ids:lt, avgUsta: lt.reduce(function(s,id){ var p=playing.find(function(p){ return p.id===id; }); return s+(p?parseFloat(p.usta):3.0); },0)/lt.length, locked:true});
+    }
+  }
+  for(var i=0;i<playing.length;i++){
+    if(!usedInUnit[playing[i].id]) units.push({ids:[playing[i].id], avgUsta:parseFloat(playing[i].usta)||3.0, locked:false});
+  }
+  units.sort(function(a,b){ return b.avgUsta-a.avgUsta; });
+
+  // If rotating, shuffle non-locked singles to avoid same partners
+  if(lastPartner){
+    var lockedUnits=units.filter(function(u){ return u.locked; });
+    var freeUnits=units.filter(function(u){ return !u.locked; });
+    // Fisher-Yates shuffle free units for partner variety
+    for(var i=freeUnits.length-1;i>0;i--){
+      var j=Math.floor(Math.random()*(i+1));
+      var tmp=freeUnits[i]; freeUnits[i]=freeUnits[j]; freeUnits[j]=tmp;
+    }
+    // Re-sort by usta within shuffle to keep balance somewhat
+    freeUnits.sort(function(a,b){ return b.avgUsta-a.avgUsta; });
+    units=lockedUnits.concat(freeUnits);
+  }
+
+  // Pack units into courts: pair top half vs bottom half by usta
+  var courts=[];
+  var half=Math.floor(units.length/2);
+  var top=units.slice(0,half), bot=units.slice(half).reverse();
+  var pairsPerCourt=ppCourt/2; // 2 for doubles, 1 for singles
+
+  // Build team slots
+  var teams=[];
+  for(var i=0;i<Math.min(top.length,bot.length);i++){
+    teams.push([top[i],bot[i]]);
+  }
+  for(var i=0;i<numCourts&&i<Math.floor(teams.length/2);i++){
+    var t1=teams[i], t2=teams[teams.length-1-i];
+    var team1=[],team2=[];
+    for(var j=0;j<t1.length;j++) for(var k=0;k<t1[j].ids.length;k++) team1.push(t1[j].ids[k]);
+    for(var j=0;j<t2.length;j++) for(var k=0;k<t2[j].ids.length;k++) team2.push(t2[j].ids[k]);
+    if(team1.length>0&&team2.length>0) courts.push({teams:[team1,team2]});
+  }
+  return courts;
 }
 function assignCourts(players,numCourts,ppCourt){
   var sorted=players.slice().sort(function(a,b){ return parseFloat(b.usta)-parseFloat(a.usta); }), courts=[];
@@ -1707,6 +1960,105 @@ function captainTeamHTML(){
   return h;
 }
 
+
+// ── PLAYERS CHOICE LIVE COURT GRID ─────────────────────
+function playersChoiceCourtGrid(sess, date, isAdmin){
+  var pcData=sess.pcSubmissions||{};
+  var courts=sess.courts||4;
+  var mpp=sess.matchesPerPlayer||4;
+  var ppCourt=sess.type==='singles'?2:4;
+
+  var h='<div class="card"><h2>🎾 Live Court View — Players Choice</h2>';
+  h+='<div class="alert alert-info" style="font-size:.82rem;margin-bottom:10px">';
+  h+=isAdmin?'Updates live as players submit preferences.':'Courts fill in as players submit preferences.';
+  h+='</div>';
+
+  // Build a courtGrid[round][courtNum] = {team1:[pids], team2:[pids]}
+  var courtGrid=[];
+  for(var r=0;r<mpp;r++){
+    var row={};
+    for(var c=1;c<=courts;c++) row[c]={team1:[],team2:[]};
+    courtGrid.push(row);
+  }
+  var pids=Object.keys(pcData);
+  for(var i=0;i<pids.length;i++){
+    var pid=parseInt(pids[i]);
+    var prefs=pcData[pids[i]];
+    for(var r=0;r<prefs.length&&r<mpp;r++){
+      var pref=prefs[r];
+      var ct=pref.court||1;
+      if(ct<1||ct>courts) continue;
+      var grid=courtGrid[r][ct];
+      var partner=pref.partner;
+      if(ppCourt===4&&partner){
+        var alreadyPlaced=false;
+        for(var c2=1;c2<=courts;c2++){
+          if(courtGrid[r][c2].team1.indexOf(partner)>=0||courtGrid[r][c2].team2.indexOf(partner)>=0){ alreadyPlaced=true; break; }
+        }
+        if(!alreadyPlaced&&grid.team1.indexOf(pid)<0&&grid.team2.indexOf(pid)<0){
+          if(grid.team1.length<ppCourt/2){ grid.team1.push(pid); grid.team1.push(partner); continue; }
+          else if(grid.team2.length<ppCourt/2){ grid.team2.push(pid); grid.team2.push(partner); continue; }
+        }
+      }
+      if(grid.team1.indexOf(pid)<0&&grid.team2.indexOf(pid)<0){
+        if(grid.team1.length<ppCourt/2) grid.team1.push(pid);
+        else if(grid.team2.length<ppCourt/2) grid.team2.push(pid);
+        else grid.team1.push(pid);
+      }
+    }
+  }
+
+  for(var r=0;r<mpp;r++){
+    h+='<div class="round-block"><div class="round-title">Round '+(r+1)+'</div><div class="courts-row">';
+    var anyP=false;
+    for(var c=1;c<=courts;c++){
+      var grid=courtGrid[r][c];
+      if(!grid.team1.length&&!grid.team2.length) continue;
+      anyP=true;
+      var scKey=r+'_'+(c-1);
+      var sc=sess.scores?sess.scores[scKey]||null:null;
+      h+='<div class="court-card">';
+      h+='<div class="court-header">Court '+c+'</div>';
+      h+='<div class="court-body">';
+      for(var ti=0;ti<2;ti++){
+        var tPids=ti===0?grid.team1:grid.team2;
+        var tScore=sc?(ti===0?sc.t1:sc.t2):null;
+        var oScore=sc?(ti===0?sc.t2:sc.t1):null;
+        var isWin=sc&&parseInt(tScore)>parseInt(oScore);
+        h+='<div class="team"><div class="team-row"><div class="team-label">Team '+(ti+1)+'</div>';
+        h+='<span class="team-score'+(sc?(isWin?' winner':''):'  empty')+'">'+(sc?tScore:'—')+'</span>';
+        h+='</div><div style="margin-top:4px">';
+        for(var pi=0;pi<tPids.length;pi++){
+          var pp=getPlayer(tPids[pi]);
+          h+='<span class="player-chip">'+esc(pp?pp.name:fmtId(tPids[pi]))+'</span>';
+        }
+        if(!tPids.length) h+='<span style="color:#aaa;font-size:.8rem">waiting...</span>';
+        h+='</div></div>';
+        if(ti===0) h+='<div class="vs">VS</div>';
+      }
+      if(isAdmin){
+        h+='<div class="score-row"><button class="btn btn-secondary btn-sm" data-score-btn data-date="'+esc(date)+'" data-round="'+r+'" data-court="'+(c-1)+'">'+((sc&&sc.t1!=='')?'✏️ Edit Score':'+ Score')+'</button></div>';
+      }
+      h+='</div></div>';
+    }
+    if(!anyP) h+='<div style="color:#aaa;font-size:.85rem;padding:8px">No preferences submitted yet.</div>';
+    h+='</div></div>';
+  }
+
+  if(pids.length){
+    h+='<div style="margin-top:8px"><span style="font-size:.82rem;font-weight:700;color:#1a5c2a">✅ '+pids.length+' submitted: </span>';
+    for(var i=0;i<pids.length;i++){
+      var spp=getPlayer(parseInt(pids[i]));
+      h+='<span style="background:#d4edda;color:#155724;border-radius:14px;padding:2px 9px;font-size:.8rem;margin:2px;display:inline-block">'+esc(spp?spp.name:pids[i])+'</span>';
+    }
+    h+='</div>';
+  } else {
+    h+='<div style="color:#aaa;font-size:.85rem;margin-top:8px">No submissions yet.</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
 // ══════════════════════════════════════════════════════
 // PLAYERS CHOICE — USER VIEW
 // ══════════════════════════════════════════════════════
@@ -1736,15 +2088,17 @@ function playersChoiceUserHTML(){
 
   // Show who has already submitted
   var submittedPids=Object.keys(pcData);
+  h+='<div id="pc-submitted-wrap" style="margin-bottom:12px">';
   if(submittedPids.length){
-    h+='<div style="margin-bottom:12px"><div style="font-weight:700;font-size:.85rem;margin-bottom:6px">✅ Submitted ('+submittedPids.length+' players)</div>';
+    h+='<div style="font-weight:700;font-size:.85rem;margin-bottom:6px">✅ Submitted ('+submittedPids.length+' players)</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
     for(var i=0;i<submittedPids.length;i++){
       var sp=getPlayer(parseInt(submittedPids[i]));
       h+='<span style="background:#d4edda;color:#155724;border-radius:14px;padding:3px 10px;font-size:.82rem">'+esc(sp?sp.name:submittedPids[i])+'</span>';
     }
-    h+='</div></div>';
+    h+='</div>';
   }
+  h+='</div>';
 
   h+='<div style="border:1.5px solid #e8f5e9;border-radius:8px;padding:12px">';
   h+='<div style="font-weight:700;margin-bottom:10px">Submit My Preferences</div>';
@@ -1765,7 +2119,9 @@ function playersChoiceUserHTML(){
   }
 
   h+='<button class="btn btn-primary" id="pc-submit-btn" style="width:100%;margin-top:4px">Submit My Preferences</button>';
-  h+='</div></div>';
+  h+='</div>';
+  h+='<div id="pc-user-grid" style="margin-top:12px">'+playersChoiceCourtGrid(sess,date,false)+'</div>';
+  h+='</div>';
   return h;
 }
 
@@ -1789,8 +2145,24 @@ function submitPlayersChoice(){
   if(!sess.pcSubmissions) sess.pcSubmissions={};
   sess.pcSubmissions[selfPid]=prefs;
   S.sessions[date]=sess; save();
-  showToast('Preferences submitted!');
-  render();
+  showToast('Preferences submitted! Court view updated.');
+  // Refresh just the grid elements without full re-render
+  var adminGrid=byId('pc-court-grid');
+  if(adminGrid) adminGrid.innerHTML=playersChoiceCourtGrid(sess,date,true);
+  var userGridEl=byId('pc-user-grid');
+  if(userGridEl) userGridEl.innerHTML=playersChoiceCourtGrid(sess,date,false);
+  // Also re-bind score buttons if admin grid was refreshed
+  if(adminGrid) bindScoreButtons();
+  // Refresh submitted-who list in user form
+  var subWrap=byId('pc-submitted-wrap');
+  if(subWrap){
+    var pcD=sess.pcSubmissions||{};
+    var sPids=Object.keys(pcD);
+    var sHtml='<div style="font-weight:700;font-size:.85rem;margin-bottom:6px">✅ Submitted ('+sPids.length+' players)</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+    for(var si=0;si<sPids.length;si++){ var spp=getPlayer(parseInt(sPids[si])); sHtml+='<span style="background:#d4edda;color:#155724;border-radius:14px;padding:3px 10px;font-size:.82rem">'+esc(spp?spp.name:sPids[si])+'</span>'; }
+    sHtml+='</div>';
+    subWrap.innerHTML=sHtml;
+  }
 }
 
 // ══════════════════════════════════════════════════════
