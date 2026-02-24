@@ -384,6 +384,13 @@ function getUpcoming(){
     if(new Date(dates[i]+'T12:00:00')>=today) return dates[i];
   return null;
 }
+// Returns upcoming date, or if none, the most recent past date (so team/assignment info stays visible)
+function getActiveSession(){
+  var upcoming=getUpcoming();
+  if(upcoming) return upcoming;
+  var dates=(S.seasons[S.currentSeason]||[]).slice().sort();
+  return dates.length?dates[dates.length-1]:null;
+}
 function byId(id){ return document.getElementById(id); }
 
 // ══ TOAST ══════════════════════════════════════════════
@@ -417,7 +424,8 @@ function render(){
 // ══════════════════════════════════════════════════════
 function userHTML(){
   var upcomingDate=getUpcoming();
-  var upSess=upcomingDate?getSession(upcomingDate):null;
+  var activeDate=getActiveSession();
+  var upSess=activeDate?getSession(activeDate):null;
   var showCaptainTab=upSess&&upSess.teamBattle;
   var showPCTab=upSess&&upSess.playersChoice;
   var h='<div class="tabs">'
@@ -450,7 +458,7 @@ function bindUser(){
         var pid=parseInt(capSel.value);
         var warn=byId('cap-add-warn');
         if(!warn||!pid) { if(warn) warn.style.display='none'; return; }
-        var date=getUpcoming(); if(!date) return;
+        var date=getActiveSession(); if(!date) return;
         var sess=getSession(date);
         var isCapA=(S.captainPid===sess.captainA);
         var otherTeam=isCapA?(sess.teamB||[]):(sess.teamA||[]);
@@ -460,7 +468,7 @@ function bindUser(){
     capAddBtn.addEventListener('click',function(){
       var pid=capSel?parseInt(capSel.value):0;
       if(!pid){ showToast('Please select a player.'); return; }
-      var date=getUpcoming(); if(!date) return;
+      var date=getActiveSession(); if(!date) return;
       var sess=getSession(date);
       var isCapA=(S.captainPid===sess.captainA);
       var isCapB=(S.captainPid===sess.captainB);
@@ -483,7 +491,7 @@ function bindUser(){
   document.querySelectorAll('[data-remove-pid]').forEach(function(btn){
     btn.addEventListener('click',function(){
       var pid=parseInt(btn.dataset.removePid);
-      var date=getUpcoming(); if(!date) return;
+      var date=getActiveSession(); if(!date) return;
       var sess=getSession(date);
       var isCapA=(S.captainPid===sess.captainA);
       if(isCapA){ sess.teamA=(sess.teamA||[]).filter(function(id){ return id!==pid; }); }
@@ -631,23 +639,80 @@ function setRsvp(pid,status,date){
 
 // ── SCHEDULE ───────────────────────────────────────────
 function scheduleHTML(isAdmin){
-  var date=isAdmin?S.selectedDate:getUpcoming();
+  var date=isAdmin?S.selectedDate:getActiveSession();
   if(!date) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No date available.</div></div>';
   var sess=getSession(date);
   if(sess.playersChoice){
     return playersChoiceCourtGrid(sess, date, isAdmin);
   }
-  if(!isAdmin&&(!sess.posted||!sess.assignments))
-    return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
+  // For users: teamBattle assignments show automatically once generated (no post required)
+  // All other modes require admin to post
+  if(!isAdmin){
+    var assignmentsReady=sess.assignments&&sess.assignments.rounds;
+    var isTeamBattle=sess.teamBattle;
+    if(!assignmentsReady&&!isTeamBattle)
+      return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
+    if(!assignmentsReady&&isTeamBattle){
+      // Show team rosters even before assignments generated
+      return teamBattleUserCard(sess, date, false);
+    }
+    if(assignmentsReady&&!isTeamBattle&&!sess.posted)
+      return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
+  }
   if(!sess.assignments)
     return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No assignments generated yet.</div></div>';
   var inP=getInPlayers(date);
   var hlOpts='<option value="">-- Select your name --</option>';
   for(var i=0;i<inP.length;i++) hlOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' - '+esc(inP[i].name)+'</option>';
-  return '<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'
+  // For teamBattle on user side, prepend team rosters above court assignments
+  var teamBattleHeader='';
+  if(!isAdmin&&sess.teamBattle) teamBattleHeader=teamBattleRostersHTML(sess);
+  return teamBattleHeader+'<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'
     +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
     +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts+'</select></div>'
     +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div></div>';
+}
+
+// Renders just the two team roster cards (used in scheduleHTML for teamBattle)
+function teamBattleRostersHTML(sess){
+  var teamA=sess.teamA||[], teamB=sess.teamB||[];
+  var h='<div class="card"><h2>⚔️ Team Battle Rosters</h2>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  // Team A
+  h+='<div style="border:2px solid #1e40af;border-radius:8px;overflow:hidden">'
+    +'<div style="background:#1e40af;color:#fff;padding:8px 12px;font-weight:700;font-size:.9rem">🔵 Team A ('+teamA.length+')</div>'
+    +'<div style="padding:10px">';
+  if(teamA.length){
+    for(var i=0;i<teamA.length;i++){
+      var p=getPlayer(teamA[i]);
+      var isCap=(teamA[i]===sess.captainA);
+      h+='<div style="padding:3px 0;font-size:.88rem;font-weight:'+(isCap?'700':'400')+'">'+(isCap?'👑 ':'')+esc(p?p.name:fmtId(teamA[i]))+'</div>';
+    }
+  } else { h+='<div style="color:#aaa;font-size:.82rem">No players yet</div>'; }
+  h+='</div></div>';
+  // Team B
+  h+='<div style="border:2px solid #991b1b;border-radius:8px;overflow:hidden">'
+    +'<div style="background:#991b1b;color:#fff;padding:8px 12px;font-weight:700;font-size:.9rem">🔴 Team B ('+teamB.length+')</div>'
+    +'<div style="padding:10px">';
+  if(teamB.length){
+    for(var i=0;i<teamB.length;i++){
+      var p=getPlayer(teamB[i]);
+      var isCap=(teamB[i]===sess.captainB);
+      h+='<div style="padding:3px 0;font-size:.88rem;font-weight:'+(isCap?'700':'400')+'">'+(isCap?'👑 ':'')+esc(p?p.name:fmtId(teamB[i]))+'</div>';
+    }
+  } else { h+='<div style="color:#aaa;font-size:.82rem">No players yet</div>'; }
+  h+='</div></div>';
+  h+='</div></div>';
+  return h;
+}
+
+// Shown on Court Assignments tab for teamBattle before assignments are generated
+function teamBattleUserCard(sess, date, isAdmin){
+  var h=teamBattleRostersHTML(sess);
+  h+='<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'
+    +'<div class="alert alert-info">Court assignments will appear here once the admin generates the schedule.</div>'
+    +'</div>';
+  return h;
 }
 function roundsHTML(sess,date,hid){
   if(!sess||!sess.assignments||!Array.isArray(sess.assignments.rounds)) return '';
@@ -723,7 +788,7 @@ function bindHighlightSelect(){
   var hsel=byId('hl-sel'); if(!hsel) return;
   hsel.addEventListener('change',function(){
     var hid=parseInt(hsel.value)||null;
-    var date=S.isAdmin?S.selectedDate:getUpcoming(); if(!date) return;
+    var date=S.isAdmin?S.selectedDate:getActiveSession(); if(!date) return;
     var sess=getSession(date), el=byId('rounds-display');
     if(el){ el.innerHTML=roundsHTML(sess,date,hid); bindScoreButtons(); }
   });
@@ -800,7 +865,22 @@ function bindAdmin(){
       if(!S.seasons[s]) S.seasons[s]=[];
       var idx=S.seasons[s].indexOf(key);
       if(idx>=0) S.seasons[s].splice(idx,1); else S.seasons[s].push(key);
-      save();
+      save(); render();
+    });
+  });
+  document.querySelectorAll('[data-cal-nav]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var parts=b.dataset.calNav.split('-');
+      S._calYear=parseInt(parts[0]); S._calMonth=parseInt(parts[1]);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-cal-remove]').forEach(function(b){
+    b.addEventListener('click',function(){
+      var key=b.dataset.calRemove, s=S.currentSeason;
+      if(!S.seasons[s]) return;
+      var idx=S.seasons[s].indexOf(key);
+      if(idx>=0){ S.seasons[s].splice(idx,1); save(); render(); }
     });
   });
   var dateSel=byId('session-date-sel');
@@ -870,28 +950,50 @@ function rosterHTML(){
 function calendarHTML(){
   var s=S.currentSeason, activeArr=S.seasons[s]||[], activeSet={};
   for(var i=0;i<activeArr.length;i++) activeSet[activeArr[i]]=true;
-  var now=new Date(), y=now.getFullYear();
-  var monthSets={Spring:[[y,2],[y,3],[y,4]],Summer:[[y,5],[y,6],[y,7]],Fall:[[y,8],[y,9],[y,10]],Winter:[[y-1,11],[y,0],[y,1]]};
-  var h='<div class="card"><h2>📆 Season Calendar</h2><div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
+  var now=new Date();
+  if(S._calYear===undefined||S._calYear===null) S._calYear=now.getFullYear();
+  if(S._calMonth===undefined||S._calMonth===null) S._calMonth=now.getMonth();
+  var yr=S._calYear, mo=S._calMonth;
+  var prevYr=mo===0?yr-1:yr, prevMo=mo===0?11:mo-1;
+  var nextYr=mo===11?yr+1:yr, nextMo=mo===11?0:mo+1;
+  var monthLabel=new Date(yr,mo,1).toLocaleString('en-US',{month:'long',year:'numeric'});
+  var h='<div class="card"><h2>📆 Season Calendar</h2>';
+  h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
   for(var si=0;si<SEASONS.length;si++) h+='<button class="season-btn'+(SEASONS[si]===s?' active':'')+'" data-season-btn="'+SEASONS[si]+'">'+SEASONS[si]+'</button>';
-  h+='</div><div class="alert alert-info" style="margin-bottom:12px">Click any date to toggle it on/off for the <strong>'+s+'</strong> season. Saturdays are highlighted in green.</div>';
-  var months=monthSets[s]||[];
-  for(var mi=0;mi<months.length;mi++){
-    var yr=months[mi][0], mo=months[mi][1];
-    h+='<div style="margin-bottom:16px"><div style="font-weight:700;margin-bottom:6px">'+new Date(yr,mo,1).toLocaleString('en-US',{month:'long',year:'numeric'})+'</div><div class="calendar-grid">';
-    var dayLabels=['Su','Mo','Tu','We','Th','Fr','Sa'];
-    for(var dl=0;dl<7;dl++) h+='<div class="cal-day cal-hdr">'+dayLabels[dl]+'</div>';
-    var first=new Date(yr,mo,1).getDay();
-    for(var fi=0;fi<first;fi++) h+='<div class="cal-day cal-other"></div>';
-    var dim=new Date(yr,mo+1,0).getDate();
-    for(var d=1;d<=dim;d++){
-      var isSat=new Date(yr,mo,d).getDay()===6;
-      var moStr=mo+1<10?'0'+(mo+1):''+(mo+1), dStr=d<10?'0'+d:''+d, key=yr+'-'+moStr+'-'+dStr;
-      var isActive=activeSet[key];
-      // All days are clickable; Saturdays get a subtle highlight border
-      h+='<div class="cal-day cal-sat'+(isActive?' active':'')+(isSat?' cal-sat-hl':'')+'" data-cal-date="'+key+'">'+d+'</div>';
+  h+='</div>';
+  h+='<div class="alert alert-info" style="margin-bottom:12px">Click any date to add/remove it from the <strong>'+s+'</strong> season. Saturdays are highlighted.</div>';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    +'<button class="btn btn-secondary btn-sm" data-cal-nav="'+prevYr+'-'+prevMo+'">&#9664; Prev</button>'
+    +'<strong style="font-size:1rem;color:#1a5c2a">'+monthLabel+'</strong>'
+    +'<button class="btn btn-secondary btn-sm" data-cal-nav="'+nextYr+'-'+nextMo+'">Next &#9654;</button>'
+    +'</div>';
+  h+='<div class="calendar-grid">';
+  var dayLabels=['Su','Mo','Tu','We','Th','Fr','Sa'];
+  for(var dl=0;dl<7;dl++) h+='<div class="cal-day cal-hdr">'+dayLabels[dl]+'</div>';
+  var first=new Date(yr,mo,1).getDay();
+  for(var fi=0;fi<first;fi++) h+='<div class="cal-day"></div>';
+  var dim=new Date(yr,mo+1,0).getDate();
+  for(var d=1;d<=dim;d++){
+    var isSat=new Date(yr,mo,d).getDay()===6;
+    var moStr=mo+1<10?'0'+(mo+1):''+(mo+1), dStr=d<10?'0'+d:''+d, key=yr+'-'+moStr+'-'+dStr;
+    var isActive=activeSet[key];
+    h+='<div class="cal-day cal-sat'+(isActive?' active':'')+(isSat?' cal-sat-hl':'')+'" data-cal-date="'+key+'">'+d+'</div>';
+  }
+  h+='</div>';
+  var seasonDates=(S.seasons[s]||[]).slice().sort();
+  if(seasonDates.length){
+    h+='<div style="margin-top:14px;border-top:2px solid #e8f5e9;padding-top:10px">'
+      +'<div style="font-weight:700;font-size:.85rem;color:#1a5c2a;margin-bottom:6px">&#128197; '+s+' Season Dates ('+seasonDates.length+')</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    for(var di=0;di<seasonDates.length;di++){
+      h+='<span style="background:#e8f5e9;color:#1a5c2a;border-radius:14px;padding:3px 10px;font-size:.82rem;font-weight:600;display:inline-flex;align-items:center;gap:4px">'
+        +esc(fmtDate(seasonDates[di]))
+        +' <button data-cal-remove="'+seasonDates[di]+'" style="background:none;border:none;cursor:pointer;color:#721c24;font-size:.85rem;padding:0;line-height:1" title="Remove">&#x2715;</button>'
+        +'</span>';
     }
     h+='</div></div>';
+  } else {
+    h+='<div style="margin-top:10px;color:#aaa;font-size:.85rem">No dates selected for '+esc(s)+' season yet.</div>';
   }
   return h+'</div>';
 }
@@ -2181,77 +2283,177 @@ function openTeamBattleSetup(){
   var inP=getInPlayers(date);
   if(inP.length<4){ showToast('Need at least 4 players marked IN.'); return; }
 
-  var teamA=sess.teamA||[], teamB=sess.teamB||[];
+  // Working copies — mutated live as user clicks +A / +B / ✕
+  var teamA=(sess.teamA||[]).slice();
+  var teamB=(sess.teamB||[]).slice();
   var captainA=sess.captainA||null, captainB=sess.captainB||null;
 
-  // Player select options
   function playerOpts(selected){
     var o='<option value="">— none —</option>';
-    for(var i=0;i<inP.length;i++){
+    for(var i=0;i<inP.length;i++)
       o+='<option value="'+inP[i].id+'"'+(inP[i].id===selected?' selected':'')+'>'+fmtId(inP[i].id)+' '+esc(inP[i].name)+'</option>';
-    }
     return o;
   }
 
-  // Build team lists
-  function teamCheckboxes(team, prefix){
+  function renderPlayerRows(){
     var h='';
     for(var i=0;i<inP.length;i++){
-      var p=inP[i], checked=team.indexOf(p.id)>=0;
-      var chipColor=prefix==='ta'?'#dbeafe':'#fee2e2';
-      var borderColor=prefix==='ta'?'#1e40af':'#991b1b';
-      h+='<label style="display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:pointer;border-radius:6px;background:'+(checked?chipColor:'transparent')+';border:1.5px solid '+(checked?borderColor:'transparent')+'">'
-        +'<input type="checkbox" class="'+prefix+'-chk" value="'+p.id+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer"> '
-        +'<span style="font-size:.88rem">'+fmtId(p.id)+' '+esc(p.name)+'</span>'
-        +'</label>';
+      var p=inP[i];
+      var inA=teamA.indexOf(p.id)>=0;
+      var inB=teamB.indexOf(p.id)>=0;
+      var isCapA=(p.id===captainA), isCapB=(p.id===captainB);
+      var tag='';
+      if(inA&&inB)       tag='<span style="background:#7c3aed;color:#fff;border-radius:10px;padding:2px 8px;font-size:.75rem;font-weight:700">A &amp; B</span>';
+      else if(inA)       tag='<span style="background:#1e40af;color:#fff;border-radius:10px;padding:2px 8px;font-size:.75rem;font-weight:700">Team A'+(isCapA?' 👑':'')+'</span>';
+      else if(inB)       tag='<span style="background:#991b1b;color:#fff;border-radius:10px;padding:2px 8px;font-size:.75rem;font-weight:700">Team B'+(isCapB?' 👑':'')+'</span>';
+      else               tag='<span style="background:#eee;color:#888;border-radius:10px;padding:2px 8px;font-size:.75rem">unassigned</span>';
+
+      var rowBg=inA&&inB?'#f3e8ff':inA?'#eff6ff':inB?'#fff1f2':'#fafafa';
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;background:'+rowBg+';margin-bottom:5px">'
+        // +A button
+        +'<button class="tb-assign-btn" data-pid="'+p.id+'" data-team="A" style="padding:3px 9px;border-radius:6px;border:2px solid #1e40af;background:'+(inA?'#1e40af':'#fff')+';color:'+(inA?'#fff':'#1e40af')+';font-weight:700;font-size:.8rem;cursor:pointer;flex-shrink:0">'+(inA?'✓ A':'+A')+'</button>'
+        // player name — centered
+        +'<span style="flex:1;font-size:.9rem;font-weight:600;text-align:center">'+esc(p.name)+'</span>'
+        // tag badge
+        +'<span style="font-size:.75rem;min-width:52px;text-align:center">'+tag+'</span>'
+        // +B button
+        +'<button class="tb-assign-btn" data-pid="'+p.id+'" data-team="B" style="padding:3px 9px;border-radius:6px;border:2px solid #991b1b;background:'+(inB?'#991b1b':'#fff')+';color:'+(inB?'#fff':'#991b1b')+';font-weight:700;font-size:.8rem;cursor:pointer;flex-shrink:0">'+(inB?'✓ B':'+B')+'</button>'
+        +'</div>';
     }
     return h;
   }
 
-  var body='<h3>⚔️ Team Battle Setup</h3>'
-    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'
-    +'<div style="border:2px solid #1e40af;border-radius:8px;padding:10px">'
-    +'<div style="font-weight:700;color:#1e40af;margin-bottom:8px">🔵 Team A</div>'
-    +'<label style="font-size:.8rem">Captain</label>'
-    +'<select id="cap-a-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainA)+'</select>'
-    +'<label style="font-size:.8rem">Players</label>'
-    +'<div style="max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:6px">'+teamCheckboxes(teamA,'ta')+'</div>'
-    +'</div>'
-    +'<div style="border:2px solid #991b1b;border-radius:8px;padding:10px">'
-    +'<div style="font-weight:700;color:#991b1b;margin-bottom:8px">🔴 Team B</div>'
-    +'<label style="font-size:.8rem">Captain</label>'
-    +'<select id="cap-b-sel" style="width:100%;margin-bottom:8px;padding:6px;border-radius:6px;border:1.5px solid #ccc">'+playerOpts(captainB)+'</select>'
-    +'<label style="font-size:.8rem">Players</label>'
-    +'<div style="max-height:220px;overflow-y:auto;border:1px solid #e0e0e0;border-radius:6px;padding:6px">'+teamCheckboxes(teamB,'tb')+'</div>'
-    +'</div>'
-    +'</div>'
-    +'<div class="alert alert-info" style="margin-top:10px;font-size:.82rem">Players can be on both teams or neither — checkboxes are independent. Captains can also add players from their own view. After saving, use <strong>"Generate Court Assignment"</strong> to create the schedule.</div>'
-    +'<div class="modal-btns">'
-    +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
-    +'<button class="btn btn-primary" id="m-tb-save">Save & Generate</button>'
-    +'</div>';
+  function renderSummary(){
+    var aNames=teamA.map(function(id){ var p=getPlayer(id); return p?esc(p.name):fmtId(id); });
+    var bNames=teamB.map(function(id){ var p=getPlayer(id); return p?esc(p.name):fmtId(id); });
+    return '<div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">'
+      +'<div style="flex:1;min-width:120px;background:#eff6ff;border:1.5px solid #1e40af;border-radius:8px;padding:7px 10px">'
+      +'<div style="font-weight:700;color:#1e40af;font-size:.82rem;margin-bottom:4px">🔵 Team A ('+teamA.length+')</div>'
+      +(aNames.length?'<div style="font-size:.8rem;color:#333">'+aNames.join(', ')+'</div>':'<div style="font-size:.8rem;color:#aaa">No players yet</div>')
+      +'</div>'
+      +'<div style="flex:1;min-width:120px;background:#fff1f2;border:1.5px solid #991b1b;border-radius:8px;padding:7px 10px">'
+      +'<div style="font-weight:700;color:#991b1b;font-size:.82rem;margin-bottom:4px">🔴 Team B ('+teamB.length+')</div>'
+      +(bNames.length?'<div style="font-size:.8rem;color:#333">'+bNames.join(', ')+'</div>':'<div style="font-size:.8rem;color:#aaa">No players yet</div>')
+      +'</div>'
+      +'</div>';
+  }
 
-  showModal(body,true);
-  byId('m-cancel').addEventListener('click',closeModal);
-  byId('m-tb-save').addEventListener('click',function(){
-    var newTeamA=[], newTeamB=[];
-    document.querySelectorAll('.ta-chk:checked').forEach(function(c){ newTeamA.push(parseInt(c.value)); });
-    document.querySelectorAll('.tb-chk:checked').forEach(function(c){ newTeamB.push(parseInt(c.value)); });
-    var newCapA=parseInt(byId('cap-a-sel').value)||null;
-    var newCapB=parseInt(byId('cap-b-sel').value)||null;
-    if(!newTeamA.length||!newTeamB.length){ showToast('Each team needs at least one player.'); return; }
-    // Warn about cross-team players
-    var crossPlayers=newTeamA.filter(function(id){ return newTeamB.indexOf(id)>=0; });
-    if(crossPlayers.length){
-      var names=crossPlayers.map(function(id){ var p=getPlayer(id); return p?p.name:fmtId(id); }).join(', ');
-      showToast('⚠️ Warning: '+names+' is on both teams!');
-    }
-    sess.teamA=newTeamA; sess.teamB=newTeamB;
-    sess.captainA=newCapA; sess.captainB=newCapB;
-    S.sessions[date]=sess; save();
-    closeModal();
-    showToast('Team Battle saved! Click "Generate Court Assignment" to create schedule.');
-  });
+  function buildModal(){
+    return '<h3>⚔️ Team Battle Setup</h3>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+      +'<div><label style="font-size:.8rem;font-weight:700;color:#1e40af">🔵 Team A Captain</label>'
+      +'<select id="cap-a-sel" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #1e40af">'+playerOpts(captainA)+'</select></div>'
+      +'<div><label style="font-size:.8rem;font-weight:700;color:#991b1b">🔴 Team B Captain</label>'
+      +'<select id="cap-b-sel" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #991b1b">'+playerOpts(captainB)+'</select></div>'
+      +'</div>'
+      +'<div style="font-size:.8rem;color:#555;margin-bottom:8px">Click <strong>+A</strong> or <strong>+B</strong> to assign each player. Click again to remove from that team.</div>'
+      +'<div id="tb-player-rows" style="max-height:340px;overflow-y:auto;border:1px solid #eee;border-radius:8px;padding:8px">'+renderPlayerRows()+'</div>'
+      +'<div id="tb-summary">'+renderSummary()+'</div>'
+      +'<div class="modal-btns" style="margin-top:12px">'
+      +'<button class="btn btn-secondary" id="m-cancel">Cancel</button>'
+      +'<button class="btn btn-primary" id="m-tb-save">Save Teams</button>'
+      +'</div>';
+  }
+
+  showModal(buildModal(), true);
+
+  function bindButtons(){
+    byId('m-cancel').addEventListener('click', closeModal);
+
+    // Captain selectors update local vars (no re-render needed)
+    var caSel=byId('cap-a-sel'); if(caSel) caSel.addEventListener('change',function(){ captainA=parseInt(caSel.value)||null; });
+    var cbSel=byId('cap-b-sel'); if(cbSel) cbSel.addEventListener('change',function(){ captainB=parseInt(cbSel.value)||null; });
+
+    // +A / +B assignment buttons
+    document.querySelectorAll('.tb-assign-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var pid=parseInt(btn.dataset.pid);
+        var team=btn.dataset.team;
+        var inA=teamA.indexOf(pid)>=0;
+        var inB=teamB.indexOf(pid)>=0;
+
+        if(team==='A'){
+          if(inA){
+            // Remove from A
+            teamA=teamA.filter(function(id){ return id!==pid; });
+            if(captainA===pid) captainA=null;
+          } else {
+            // Add to A — warn if already on B
+            if(inB){
+              var pn=getPlayer(pid); var nm=pn?pn.name:fmtId(pid);
+              showToast('⚠️ '+nm+' is already on Team B — now on both teams.');
+            }
+            teamA.push(pid);
+          }
+        } else {
+          if(inB){
+            // Remove from B
+            teamB=teamB.filter(function(id){ return id!==pid; });
+            if(captainB===pid) captainB=null;
+          } else {
+            // Add to B — warn if already on A
+            if(inA){
+              var pn=getPlayer(pid); var nm=pn?pn.name:fmtId(pid);
+              showToast('⚠️ '+nm+' is already on Team A — now on both teams.');
+            }
+            teamB.push(pid);
+          }
+        }
+
+        // Re-render rows and summary in place (no full modal rebuild — preserves captain selects)
+        var rowsEl=byId('tb-player-rows');
+        if(rowsEl){ rowsEl.innerHTML=renderPlayerRows(); bindAssignButtons(); }
+        var sumEl=byId('tb-summary');
+        if(sumEl){ sumEl.innerHTML=renderSummary(); }
+      });
+    });
+
+    byId('m-tb-save').addEventListener('click', function(){
+      // Read captain selects at save time
+      var caSel2=byId('cap-a-sel'), cbSel2=byId('cap-b-sel');
+      if(caSel2) captainA=parseInt(caSel2.value)||null;
+      if(cbSel2) captainB=parseInt(cbSel2.value)||null;
+      if(!teamA.length||!teamB.length){ showToast('Each team needs at least one player.'); return; }
+      sess.teamA=teamA; sess.teamB=teamB;
+      sess.captainA=captainA; sess.captainB=captainB;
+      S.sessions[date]=sess; save(); closeModal();
+      showToast('Teams saved! Click "Generate Court Assignment" to create schedule.');
+    });
+  }
+
+  function bindAssignButtons(){
+    document.querySelectorAll('.tb-assign-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var pid=parseInt(btn.dataset.pid);
+        var team=btn.dataset.team;
+        var inA=teamA.indexOf(pid)>=0;
+        var inB=teamB.indexOf(pid)>=0;
+        if(team==='A'){
+          if(inA){
+            teamA=teamA.filter(function(id){ return id!==pid; });
+            if(captainA===pid) captainA=null;
+          } else {
+            if(inB){ var pn=getPlayer(pid); showToast('⚠️ '+(pn?pn.name:fmtId(pid))+' is already on Team B — now on both teams.'); }
+            teamA.push(pid);
+          }
+        } else {
+          if(inB){
+            teamB=teamB.filter(function(id){ return id!==pid; });
+            if(captainB===pid) captainB=null;
+          } else {
+            if(inA){ var pn=getPlayer(pid); showToast('⚠️ '+(pn?pn.name:fmtId(pid))+' is already on Team A — now on both teams.'); }
+            teamB.push(pid);
+          }
+        }
+        var rowsEl=byId('tb-player-rows');
+        if(rowsEl){ rowsEl.innerHTML=renderPlayerRows(); bindAssignButtons(); }
+        var sumEl=byId('tb-summary');
+        if(sumEl){ sumEl.innerHTML=renderSummary(); }
+      });
+    });
+  }
+
+  bindButtons();
 }
 
 function generateTeamBattleAssignments(date, sess){
@@ -2313,7 +2515,7 @@ function generateTeamBattleAssignments(date, sess){
 // TEAM BATTLE — CAPTAIN VIEW (user-facing)
 // ══════════════════════════════════════════════════════
 function openCaptainLogin(){
-  var date=getUpcoming(); if(!date){ showToast('No upcoming session.'); return; }
+  var date=getActiveSession(); if(!date){ showToast('No session available.'); return; }
   var sess=getSession(date);
   if(!sess.teamBattle){ showToast('No Team Battle active for this session.'); return; }
   var inP=getInPlayers(date);
@@ -2340,51 +2542,102 @@ function openCaptainLogin(){
 }
 
 function captainTeamHTML(){
-  var date=getUpcoming(); if(!date) return '<div class="card"><div class="alert alert-info">No upcoming session.</div></div>';
+  var date=getActiveSession(); if(!date) return '<div class="card"><div class="alert alert-info">No session available.</div></div>';
   var sess=getSession(date);
   if(!sess.teamBattle) return '<div class="card"><div class="alert alert-info">No Team Battle mode active.</div></div>';
-  if(!S.captainPid) return '<div class="card"><h2>⚔️ Captain View</h2>'
-    +'<div class="alert alert-info">You need to log in as a captain to access this view.</div>'
-    +'<button class="btn btn-primary" id="captain-login-btn">👑 Captain Login</button></div>';
 
+  var teamA=sess.teamA||[], teamB=sess.teamB||[];
   var isCapA=(S.captainPid===sess.captainA);
   var isCapB=(S.captainPid===sess.captainB);
-  if(!isCapA&&!isCapB) return '<div class="card"><div class="alert alert-warn">You are not a captain for this session. <button class="btn btn-secondary btn-sm" id="captain-login-btn">Switch Captain</button></div></div>';
+  var isCaptain=isCapA||isCapB;
+  var inP=getInPlayers(date);
 
-  var myTeam=isCapA?(sess.teamA||[]):(sess.teamB||[]);
-  var otherTeam=isCapA?(sess.teamB||[]):(sess.teamA||[]);
+  var h='<div class="card"><h2>⚔️ Team Battle</h2>';
+
+  // ── Public team rosters (always visible) ──────────────
+  var hasTeams=teamA.length||teamB.length;
+  if(hasTeams){
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">';
+
+    // Team A
+    h+='<div style="border:2px solid #1e40af;border-radius:8px;overflow:hidden">'
+      +'<div style="background:#1e40af;color:#fff;padding:8px 12px;font-weight:700;font-size:.9rem">🔵 Team A</div>'
+      +'<div style="padding:10px">';
+    if(teamA.length){
+      for(var i=0;i<teamA.length;i++){
+        var p=getPlayer(teamA[i]);
+        var isCap=(teamA[i]===sess.captainA);
+        h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #e8eeff">'
+          +(isCap?'<span title="Captain" style="font-size:.85rem">👑</span>':'<span style="width:1.1rem;display:inline-block"></span>')
+          +'<span style="font-size:.88rem;font-weight:'+(isCap?'700':'400')+'">'+esc(p?p.name:fmtId(teamA[i]))+'</span>'
+          +'</div>';
+      }
+    } else {
+      h+='<div style="color:#aaa;font-size:.82rem">No players yet</div>';
+    }
+    h+='</div></div>';
+
+    // Team B
+    h+='<div style="border:2px solid #991b1b;border-radius:8px;overflow:hidden">'
+      +'<div style="background:#991b1b;color:#fff;padding:8px 12px;font-weight:700;font-size:.9rem">🔴 Team B</div>'
+      +'<div style="padding:10px">';
+    if(teamB.length){
+      for(var i=0;i<teamB.length;i++){
+        var p=getPlayer(teamB[i]);
+        var isCap=(teamB[i]===sess.captainB);
+        h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #ffe8e8">'
+          +(isCap?'<span title="Captain" style="font-size:.85rem">👑</span>':'<span style="width:1.1rem;display:inline-block"></span>')
+          +'<span style="font-size:.88rem;font-weight:'+(isCap?'700':'400')+'">'+esc(p?p.name:fmtId(teamB[i]))+'</span>'
+          +'</div>';
+      }
+    } else {
+      h+='<div style="color:#aaa;font-size:.82rem">No players yet</div>';
+    }
+    h+='</div></div>';
+
+    h+='</div>'; // end grid
+  } else {
+    h+='<div class="alert alert-info" style="margin-bottom:12px">Teams have not been assigned yet. Check back soon.</div>';
+  }
+
+  // ── Captain login / switch button ──────────────────────
+  if(!isCaptain){
+    h+='<button class="btn btn-secondary btn-sm" id="captain-login-btn">👑 Captain Login</button>';
+    h+='</div>';
+    return h;
+  }
+
+  // ── Captain management section (logged-in captains only) ──
+  var myTeam=isCapA?teamA:teamB;
+  var otherTeam=isCapA?teamB:teamA;
   var teamLabel=isCapA?'🔵 Team A':'🔴 Team B';
   var teamColor=isCapA?'#1e40af':'#991b1b';
   var teamBorder=isCapA?'#1e40af':'#991b1b';
   var chipClass=isCapA?'team-a-chip':'team-b-chip';
 
-  var inP=getInPlayers(date);
-
-  var h='<div class="card"><h2>⚔️ '+teamLabel+'</h2>';
-  h+='<div style="font-size:.85rem;color:#555;margin-bottom:12px">Captain: <strong>'+esc((getPlayer(S.captainPid)||{name:'?'}).name)+'</strong>'
+  h+='<div style="font-size:.85rem;color:#555;margin-bottom:10px">Logged in as captain of <strong>'+teamLabel+'</strong>'
     +' <button class="btn btn-secondary btn-sm" id="captain-login-btn" style="margin-left:8px">Switch</button></div>';
 
-  // Team member management section
   h+='<div style="border:2px solid '+teamBorder+';border-radius:8px;padding:12px;margin-bottom:14px">';
-  h+='<div style="font-weight:700;color:'+teamColor+';margin-bottom:8px">My Team Roster ('+myTeam.length+' players)</div>';
+  h+='<div style="font-weight:700;color:'+teamColor+';margin-bottom:8px">Manage My Roster</div>';
 
-  // Current members
   if(myTeam.length){
     h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
     for(var i=0;i<myTeam.length;i++){
       var mp=getPlayer(myTeam[i]);
-      var isCap=(myTeam[i]===S.captainPid);
-      h+='<span class="'+chipClass+'" style="display:inline-flex;align-items:center;gap:4px">'+(isCap?'👑 ':'')+esc(mp?mp.name:fmtId(myTeam[i]))+
-        (!isCap?'<button type="button" data-remove-pid="'+myTeam[i]+'" style="background:none;border:none;cursor:pointer;color:inherit;font-size:.75rem;padding:0;margin-left:2px">✕</button>':'')+'</span>';
+      var isMyCapPid=(myTeam[i]===S.captainPid);
+      h+='<span class="'+chipClass+'" style="display:inline-flex;align-items:center;gap:4px">'
+        +(isMyCapPid?'👑 ':'')+esc(mp?mp.name:fmtId(myTeam[i]))
+        +(!isMyCapPid?'<button type="button" data-remove-pid="'+myTeam[i]+'" style="background:none;border:none;cursor:pointer;color:inherit;font-size:.75rem;padding:0;margin-left:2px">✕</button>':'')
+        +'</span>';
     }
     h+='</div>';
   } else {
-    h+='<div style="color:#aaa;font-size:.85rem;margin-bottom:10px">No players assigned yet.</div>';
+    h+='<div style="color:#aaa;font-size:.85rem;margin-bottom:10px">No players on your team yet.</div>';
   }
 
-  // Add player section
   h+='<div style="margin-top:8px">';
-  h+='<label style="font-size:.8rem;font-weight:600">Add Player to Team</label>';
+  h+='<label style="font-size:.8rem;font-weight:600">Add Player to My Team</label>';
   h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
   h+='<select id="cap-add-player-sel" style="flex:1;padding:7px;border-radius:6px;border:1.5px solid #ccc;font-size:.88rem">';
   h+='<option value="">— select player —</option>';
@@ -2401,9 +2654,9 @@ function captainTeamHTML(){
   h+='<div id="cap-add-warn" style="margin-top:6px;color:#856404;font-size:.82rem;display:none">⚠️ This player is already on the other team. They will play for both teams if added.</div>';
   h+='</div></div>';
 
-  // Show assignments if generated
+  // Today's matches filtered to captain's team
   if(sess.assignments&&sess.assignments.rounds){
-    h+='<div style="font-weight:700;margin-bottom:8px">Today\'s Matches</div>';
+    h+='<div style="font-weight:700;margin-bottom:8px">Today\'s Matches — '+teamLabel+'</div>';
     var rounds=sess.assignments.rounds;
     for(var ri=0;ri<rounds.length;ri++){
       var round=rounds[ri]; if(!round||!round.courts) continue;
@@ -2433,7 +2686,7 @@ function captainTeamHTML(){
           h+='<div>';
           for(var pi=0;pi<teamPids.length;pi++){
             var pp=getPlayer(teamPids[pi]);
-            h+='<span style="font-size:.85rem;font-weight:'+(myT?'700':'400')+'">'+esc(pp?pp.name:fmtId(teamPids[pi]))+(pi<teamPids.length-1?' & ':'')+'</span>';
+            h+='<span style="font-size:.85rem;font-weight:'+(myT?'700':'400')+'">'+esc(pp?pp.name:fmtId(teamPids[pi]))+(pi<teamPids.length-1?' &amp; ':'')+'</span>';
           }
           h+='</div>';
           h+='<span style="font-weight:700;color:'+(myT?teamColor:'#666')+'">'+(tScore!==null&&tScore!==''?tScore:'—')+'</span>';
@@ -2445,11 +2698,11 @@ function captainTeamHTML(){
       if(!myPlayed){
         var inBye=false;
         if(round.byes) for(var pi=0;pi<myTeam.length;pi++) if(round.byes.indexOf(myTeam[pi])>=0){ inBye=true; break; }
-        h+='<div style="color:#856404;font-size:.82rem;padding:4px 0">'+(inBye?'⏸ Sitting out this round':'No courts assigned')+'</div>';
+        h+='<div style="color:#856404;font-size:.82rem;padding:4px 0">'+(inBye?'⏸ Sitting out this round':'No courts assigned this round')+'</div>';
       }
     }
   } else {
-    h+='<div class="alert alert-info">Assignments will be generated by admin once teams are set.</div>';
+    h+='<div class="alert alert-info">Assignments will appear here once the admin generates the schedule.</div>';
   }
 
   h+='</div>';
