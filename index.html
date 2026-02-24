@@ -126,6 +126,7 @@ td{padding:8px;border-bottom:1px solid #eee;vertical-align:middle}
 .cal-day{padding:6px;text-align:center;border-radius:6px;font-size:.82rem;cursor:default}
 .cal-sat{border:1.5px solid #ccc;background:#f9f9f9;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .cal-sat:active{background:#e8f5e9}
+.cal-sat.cal-sat-hl{border-color:#a5d6b0;background:#f0faf2}
 .cal-sat.active{background:#1a5c2a;color:#fff;border-color:#1a5c2a}
 .cal-hdr{font-weight:700;font-size:.75rem;color:#666}
 .cal-other{color:#ccc}
@@ -249,7 +250,7 @@ var S = {
   adminTab: 'roster',
   userTab: 'rsvp'
 };
-var PASS = 'mydmvtennis';
+var PASS = 'dmv';
 var SEASONS = ['Spring','Summer','Fall','Winter'];
 
 // ── Load admin pref from localStorage (device-only) ──
@@ -421,7 +422,7 @@ function userHTML(){
   var showPCTab=upSess&&upSess.playersChoice;
   var h='<div class="tabs">'
     +'<button class="tab'+(S.userTab==='rsvp'?' active':'')+'" data-utab="rsvp">RSVP</button>'
-    +'<button class="tab'+(S.userTab==='schedule'?' active':'')+'" data-utab="schedule">Schedule</button>'
+    +'<button class="tab'+(S.userTab==='schedule'?' active':'')+'" data-utab="schedule">Court Assignments &amp; Scores</button>'
     +(showCaptainTab?'<button class="tab'+(S.userTab==='captain'?' active':'')+'" data-utab="captain">⚔️ My Team</button>':'')
     +(showPCTab?'<button class="tab'+(S.userTab==='pchoice'?' active':'')+'" data-utab="pchoice">🎾 My Court</button>':'')
     +'<button class="tab'+(S.userTab==='stats'?' active':'')+'" data-utab="stats">Stats</button>'
@@ -491,7 +492,23 @@ function bindUser(){
       showToast('Player removed.'); render();
     });
   });
-  bindScoreButtons(); bindHighlightSelect();
+  bindScoreButtons(); bindHighlightSelect(); bindStatsControls();
+}
+
+// ── STATS CONTROLS BINDING ─────────────────────────────
+function bindStatsControls(){
+  document.querySelectorAll('[data-stats-view]').forEach(function(b){
+    b.addEventListener('click',function(){ S._statsView=b.dataset.statsView; render(); });
+  });
+  var ssSel=byId('stats-session-sel');
+  if(ssSel) ssSel.addEventListener('change',function(){ S._statsSessionDate=ssSel.value; render(); });
+  var pfSel=byId('partner-focus-sel');
+  if(pfSel) pfSel.addEventListener('change',function(){ S._partnerFocusPid=parseInt(pfSel.value)||null; render(); });
+  document.querySelectorAll('[data-partner-sub]').forEach(function(b){
+    b.addEventListener('click',function(){ S._partnerSubView=b.dataset.partnerSub; render(); });
+  });
+  var psSel=byId('partner-session-sel');
+  if(psSel) psSel.addEventListener('change',function(){ S._partnerSessionDate=psSel.value; render(); });
 }
 
 // ── RSVP ───────────────────────────────────────────────
@@ -503,7 +520,7 @@ function rsvpRosterHTML(date){
     var p=S.players[i], st=rsvps[p.id];
     if(st==='IN') inList.push(p);
     else if(st==='OUT') outList.push(p);
-    else pendingList.push(p);
+    else pendingList.push(p); // not_submitted (default)
   }
   var h='<div style="margin-top:16px;border-top:2px solid #e8f5e9;padding-top:14px">';
   h+='<div style="font-weight:700;color:#1a5c2a;margin-bottom:10px;font-size:.95rem">📋 Who&#39;s Playing?</div>';
@@ -539,12 +556,12 @@ function rsvpRosterHTML(date){
     h+='</div></div>';
   }
 
-  // Pending
+  // Not Submitted
   if(pendingList.length){
     h+='<div>';
     h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">';
-    h+='<span style="background:#eee;color:#666;border-radius:12px;padding:2px 8px;font-size:.75rem;font-weight:700">⏳ PENDING</span>';
-    h+='<span style="font-size:.82rem;color:#555">'+pendingList.length+' haven&#39;t responded</span>';
+    h+='<span style="background:#eee;color:#666;border-radius:12px;padding:2px 8px;font-size:.75rem;font-weight:700">📭 NOT SUBMITTED</span>';
+    h+='<span style="font-size:.82rem;color:#555">'+pendingList.length+' haven&#39;t submitted</span>';
     h+='</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:6px">';
     for(var i=0;i<pendingList.length;i++){
@@ -584,7 +601,7 @@ function renderRsvpStatus(){
   var sess=getSession(date), cur=sess.rsvps[pid]||null, p=getPlayer(pid), name=p?p.name:fmtId(pid);
   el.innerHTML='<div>'
     +'<div style="font-size:.95rem;margin-bottom:10px">Status for <strong>'+esc(name)+'</strong>: '
-    +(cur?'<span class="badge '+(cur==='IN'?'badge-in':'badge-out')+'">'+cur+'</span>':'<span style="color:#888">Not set</span>')
+    +(cur==='IN'?'<span class="badge badge-in">IN</span>':cur==='OUT'?'<span class="badge badge-out">OUT</span>':'<span style="background:#eee;color:#666;border-radius:12px;padding:2px 8px;font-size:.75rem;font-weight:700">NOT SUBMITTED</span>')
     +'</div><div style="display:flex;gap:12px">'
     +'<button class="btn rsvp-big-btn '+(cur==='IN'?'btn-primary':'btn-secondary')+'" id="btn-in">✅ IN</button>'
     +'<button class="btn rsvp-big-btn '+(cur==='OUT'?'btn-danger':'btn-secondary')+'" id="btn-out">❌ OUT</button>'
@@ -817,7 +834,7 @@ function bindAdmin(){
       S.sessions[S.selectedDate]=sess; save();
     });
   });
-  bindScoreButtons(); bindHighlightSelect();
+  bindScoreButtons(); bindHighlightSelect(); bindStatsControls();
 }
 
 // ── ROSTER HTML ────────────────────────────────────────
@@ -857,7 +874,7 @@ function calendarHTML(){
   var monthSets={Spring:[[y,2],[y,3],[y,4]],Summer:[[y,5],[y,6],[y,7]],Fall:[[y,8],[y,9],[y,10]],Winter:[[y-1,11],[y,0],[y,1]]};
   var h='<div class="card"><h2>📆 Season Calendar</h2><div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">';
   for(var si=0;si<SEASONS.length;si++) h+='<button class="season-btn'+(SEASONS[si]===s?' active':'')+'" data-season-btn="'+SEASONS[si]+'">'+SEASONS[si]+'</button>';
-  h+='</div><div class="alert alert-info" style="margin-bottom:12px">Click any Saturday to toggle it on/off for the <strong>'+s+'</strong> season.</div>';
+  h+='</div><div class="alert alert-info" style="margin-bottom:12px">Click any date to toggle it on/off for the <strong>'+s+'</strong> season. Saturdays are highlighted in green.</div>';
   var months=monthSets[s]||[];
   for(var mi=0;mi<months.length;mi++){
     var yr=months[mi][0], mo=months[mi][1];
@@ -870,8 +887,9 @@ function calendarHTML(){
     for(var d=1;d<=dim;d++){
       var isSat=new Date(yr,mo,d).getDay()===6;
       var moStr=mo+1<10?'0'+(mo+1):''+(mo+1), dStr=d<10?'0'+d:''+d, key=yr+'-'+moStr+'-'+dStr;
-      if(isSat) h+='<div class="cal-day cal-sat'+(activeSet[key]?' active':'')+'" data-cal-date="'+key+'">'+d+'</div>';
-      else h+='<div class="cal-day cal-other">'+d+'</div>';
+      var isActive=activeSet[key];
+      // All days are clickable; Saturdays get a subtle highlight border
+      h+='<div class="cal-day cal-sat'+(isActive?' active':'')+(isSat?' cal-sat-hl':'')+'" data-cal-date="'+key+'">'+d+'</div>';
     }
     h+='</div></div>';
   }
@@ -894,7 +912,7 @@ function sessionHTML(){
   for(var i=0;i<S.players.length;i++){
     var p=S.players[i], st=allR[p.id]||'—';
     rsvpRows+='<tr><td>'+fmtId(p.id)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.usta)+'</td>'
-      +'<td><span class="badge '+(st==='IN'?'badge-in':st==='OUT'?'badge-out':'')+'">'+( st==='—'?'—':st)+'</span></td>'
+      +'<td><span class="badge '+(st==='IN'?'badge-in':st==='OUT'?'badge-out':'')+'">'+( st==='—'?'Not Submitted':st)+'</span></td>'
       +'<td style="white-space:nowrap">'
       +'<button class="btn btn-primary btn-sm" data-rsvp-pid="'+p.id+'" data-rsvp-status="IN">IN</button> '
       +'<button class="btn btn-danger btn-sm" data-rsvp-pid="'+p.id+'" data-rsvp-status="OUT">OUT</button>'
@@ -967,7 +985,103 @@ function saveSessionSettings(){
   S.sessions[date]=sess; save();
 }
 
-// ── BYES HTML ──────────────────────────────────────────
+// ── SESSION STATS BUILDER ──────────────────────────────
+// Returns {pid: {wins, losses, gamesWon, gamesLost, byes}} for one session date
+function buildSessionStats(date, sess){
+  var result={};
+  if(!sess||!sess.assignments) return result;
+  var scores=sess.scores||{};
+  var rounds=sess.assignments.rounds||[];
+
+  // Init all IN players
+  var rsvps=sess.rsvps||{};
+  for(var pid in rsvps){
+    if(rsvps[pid]==='IN') result[pid]={wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+  }
+
+  // Byes
+  for(var ri=0;ri<rounds.length;ri++){
+    var round=rounds[ri]; if(!round) continue;
+    var byes=round.byes||[];
+    for(var bi=0;bi<byes.length;bi++){
+      var bpid=String(byes[bi]);
+      if(!result[bpid]) result[bpid]={wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+      result[bpid].byes++;
+    }
+    // Match stats
+    var courts=round.courts||[];
+    for(var ci=0;ci<courts.length;ci++){
+      var court=courts[ci]; if(!court||!court.teams||court.teams.length<2) continue;
+      var key=ri+'_'+ci, sc=scores[key];
+      if(!sc||sc.t1===''||sc.t2==='') continue;
+      var s1=parseInt(sc.t1), s2=parseInt(sc.t2);
+      if(isNaN(s1)||isNaN(s2)) continue;
+      var team1=court.teams[0]||[], team2=court.teams[1]||[];
+      var t1wins=s1>s2, t2wins=s2>s1;
+      for(var pi=0;pi<team1.length;pi++){
+        var pid2=String(team1[pi]);
+        if(!result[pid2]) result[pid2]={wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+        if(t1wins) result[pid2].wins++; else if(t2wins) result[pid2].losses++;
+        result[pid2].gamesWon+=s1; result[pid2].gamesLost+=s2;
+      }
+      for(var pi=0;pi<team2.length;pi++){
+        var pid3=String(team2[pi]);
+        if(!result[pid3]) result[pid3]={wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+        if(t2wins) result[pid3].wins++; else if(t1wins) result[pid3].losses++;
+        result[pid3].gamesWon+=s2; result[pid3].gamesLost+=s1;
+      }
+    }
+  }
+  return result;
+}
+
+// ── PARTNER STATS BUILDER ──────────────────────────────
+// Returns {partnerId: {matchWins, matchLosses, gamesWon, gamesLost, matches}} for a player across dates
+function buildPartnerStats(focusPid, dates){
+  var result={};
+  for(var di=0;di<dates.length;di++){
+    var date=dates[di];
+    var sess=S.sessions[date]; if(!sess||!sess.assignments) continue;
+    var scores=sess.scores||{};
+    var rounds=sess.assignments.rounds||[];
+    for(var ri=0;ri<rounds.length;ri++){
+      var round=rounds[ri]; if(!round) continue;
+      var courts=round.courts||[];
+      for(var ci=0;ci<courts.length;ci++){
+        var court=courts[ci]; if(!court||!court.teams||court.teams.length<2) continue;
+        var key=ri+'_'+ci, sc=scores[key];
+        // Find which team focusPid is on
+        var myTeamIdx=-1;
+        for(var ti=0;ti<court.teams.length;ti++){
+          if((court.teams[ti]||[]).indexOf(focusPid)>=0){ myTeamIdx=ti; break; }
+        }
+        if(myTeamIdx<0) continue;
+        var myTeam=court.teams[myTeamIdx]||[];
+        var otherTeam=court.teams[1-myTeamIdx]||[];
+        // Extract score info
+        var s1=sc&&sc.t1!==''?parseInt(sc.t1):null;
+        var s2=sc&&sc.t2!==''?parseInt(sc.t2):null;
+        var myScore=sc?(myTeamIdx===0?s1:s2):null;
+        var oppScore=sc?(myTeamIdx===0?s2:s1):null;
+        var matchWin=myScore!==null&&oppScore!==null&&myScore>oppScore;
+        var matchLoss=myScore!==null&&oppScore!==null&&myScore<oppScore;
+        // Count stats for each partner on my team
+        for(var pi=0;pi<myTeam.length;pi++){
+          var partPid=myTeam[pi];
+          if(partPid===focusPid) continue;
+          var pk=String(partPid);
+          if(!result[pk]) result[pk]={matchWins:0,matchLosses:0,gamesWon:0,gamesLost:0,matches:0};
+          result[pk].matches++;
+          if(matchWin) result[pk].matchWins++;
+          if(matchLoss) result[pk].matchLosses++;
+          if(myScore!==null) result[pk].gamesWon+=myScore;
+          if(oppScore!==null) result[pk].gamesLost+=oppScore;
+        }
+      }
+    }
+  }
+  return result;
+}
 
 // ── STATS HELPERS ──────────────────────────────────────
 function getPlayerStats(pid, season){
@@ -1052,58 +1166,220 @@ function calcTotalPoints(pid, season){
 }
 
 function byesHTML(){
-  var season = S.currentSeason;
+  var season=S.currentSeason;
   if(!S.playerStats) S.playerStats={};
   if(!S.pointsConfig) S.pointsConfig={matchWin:3,gameWin:1,attendance:1};
   var cfg=S.pointsConfig;
   var isAdmin=S.isAdmin;
 
-  var h = '<div class="card"><h2>📊 Season Stats — '+season+'</h2>';
+  // Stats view mode: 'season_total' | 'per_session' | 'partners'
+  var viewMode=S._statsView||'season_total';
+
+  var h='<div class="card"><h2>📊 Season Stats — '+season+'</h2>';
 
   // Points config (admin only)
   if(isAdmin){
-    h += '<div class="card" style="border:1.5px solid #e8f5e9;margin-bottom:12px">'      +'<h2>⚙️ Points Configuration</h2>'      +'<div class="form-row">'      +'<div><label>Points per Match Win</label><input id="cfg-match-win" type="number" min="0" value="'+cfg.matchWin+'"></div>'      +'<div><label>Points per Game Won</label><input id="cfg-game-win" type="number" min="0" value="'+cfg.gameWin+'"></div>'      +'<div><label>Points per Session Attended</label><input id="cfg-att" type="number" min="0" value="'+cfg.attendance+'"></div>'      +'</div>'      +'<button class="btn btn-green btn-sm" id="cfg-save-btn" style="margin-top:4px">Save Config</button>'      +'</div>';
+    h+='<div class="card" style="border:1.5px solid #e8f5e9;margin-bottom:12px">'
+      +'<h2>⚙️ Points Configuration</h2>'
+      +'<div class="form-row">'
+      +'<div><label>Points per Match Win</label><input id="cfg-match-win" type="number" min="0" value="'+cfg.matchWin+'"></div>'
+      +'<div><label>Points per Game Won</label><input id="cfg-game-win" type="number" min="0" value="'+cfg.gameWin+'"></div>'
+      +'<div><label>Points per Session Attended</label><input id="cfg-att" type="number" min="0" value="'+cfg.attendance+'"></div>'
+      +'</div>'
+      +'<button class="btn btn-green btn-sm" id="cfg-save-btn" style="margin-top:4px">Save Config</button>'
+      +'</div>';
   }
 
   if(isAdmin){
-    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'      +'<button class="btn btn-secondary" id="import-stats-btn">Import Stats .CSV</button>'      +'<button class="btn btn-secondary" id="export-stats-btn">Export Stats .CSV</button>'      +'<button class="btn btn-secondary" id="att-btn">Mark Attendance</button>'      +'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
+      +'<button class="btn btn-secondary" id="import-stats-btn">Import Stats .CSV</button>'
+      +'<button class="btn btn-secondary" id="export-stats-btn">Export Stats .CSV</button>'
+      +'<button class="btn btn-secondary" id="att-btn">Mark Attendance</button>'
+      +'</div>';
   }
 
   if(!S.players.length){
     return h+'<div class="alert alert-info">No players in roster.</div></div>';
   }
 
-  // Build rows
-  var rows = S.players.map(function(p){
-    var bc = (S.byeCounts[p.id]||{})[season]||0;
-    var st = getPlayerStats(p.id, season);
-    var att=(S.playerStats[p.id]||{})[season+'_att']||0;
-    var total = st.wins + st.losses;
-    var winPct = total > 0 ? Math.round((st.wins/total)*100) : null;
-    var pts = calcTotalPoints(p.id, season);
-    return { p:p, byes:bc, wins:st.wins, losses:st.losses, gamesWon:st.gamesWon, gamesLost:st.gamesLost, winPct:winPct, total:total, att:att, pts:pts };
-  });
+  // View selector tabs
+  h+='<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<button class="btn '+(viewMode==='season_total'?'btn-green':'btn-secondary')+' btn-sm" data-stats-view="season_total">Season Total</button>'
+    +'<button class="btn '+(viewMode==='per_session'?'btn-green':'btn-secondary')+' btn-sm" data-stats-view="per_session">Per Session</button>'
+    +'<button class="btn '+(viewMode==='partners'?'btn-green':'btn-secondary')+' btn-sm" data-stats-view="partners">Partner Stats</button>'
+    +'</div>';
 
-  rows.sort(function(a,b){
-    if(b.pts !== a.pts) return b.pts - a.pts;
-    if(b.wins !== a.wins) return b.wins - a.wins;
-    return b.gamesWon - a.gamesWon;
-  });
-
-  h += '<div class="sticky-table-wrap">';
-  h += '<table><tr><th>#</th><th>Name</th><th>Pts</th><th>M Won</th><th>M Lost</th><th>Win%</th><th>G Won</th><th>G Lost</th><th>Att</th><th>Byes</th></tr>';
-  for(var i=0; i<rows.length; i++){
-    var r = rows[i];
-    var winPctStr = r.winPct !== null ? r.winPct+'%' : '—';
-    var medal = i===0&&r.total>0 ? '🥇 ' : i===1&&r.total>0 ? '🥈 ' : i===2&&r.total>0 ? '🥉 ' : '';
-    h += '<tr>'      +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'      +'<td><strong>'+medal+esc(r.p.name)+'</strong></td>'      +'<td><span class="pts-badge">'+r.pts+'</span></td>'      +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'      +'<td style="color:#721c24">'+r.losses+'</td>'      +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'      +'<td>'+r.gamesWon+'</td>'      +'<td>'+r.gamesLost+'</td>'      +'<td>'+r.att+'</td>'      +'<td style="color:#856404">'+r.byes+'</td>'      +'</tr>';
+  // ── SEASON TOTAL VIEW ──────────────────────────────────
+  if(viewMode==='season_total'){
+    var rows=S.players.map(function(p){
+      var bc=(S.byeCounts[p.id]||{})[season]||0;
+      var st=getPlayerStats(p.id,season);
+      var att=(S.playerStats[p.id]||{})[season+'_att']||0;
+      var total=st.wins+st.losses;
+      var winPct=total>0?Math.round((st.wins/total)*100):null;
+      var pts=calcTotalPoints(p.id,season);
+      return{p:p,byes:bc,wins:st.wins,losses:st.losses,gamesWon:st.gamesWon,gamesLost:st.gamesLost,winPct:winPct,total:total,att:att,pts:pts};
+    });
+    rows.sort(function(a,b){
+      if(b.pts!==a.pts) return b.pts-a.pts;
+      if(b.wins!==a.wins) return b.wins-a.wins;
+      return b.gamesWon-a.gamesWon;
+    });
+    h+='<div class="sticky-table-wrap">';
+    h+='<table><tr><th>#</th><th>Name</th><th>Pts</th><th>M Won</th><th>M Lost</th><th>Win%</th><th>G Won</th><th>G Lost</th><th>Att</th>'+(isAdmin?'<th>Byes</th>':'')+'</tr>';
+    for(var i=0;i<rows.length;i++){
+      var r=rows[i];
+      var winPctStr=r.winPct!==null?r.winPct+'%':'—';
+      var medal=i===0&&r.total>0?'🥇 ':i===1&&r.total>0?'🥈 ':i===2&&r.total>0?'🥉 ':'';
+      h+='<tr>'
+        +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'
+        +'<td><strong>'+medal+esc(r.p.name)+'</strong></td>'
+        +'<td><span class="pts-badge">'+r.pts+'</span></td>'
+        +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'
+        +'<td style="color:#721c24">'+r.losses+'</td>'
+        +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'
+        +'<td>'+r.gamesWon+'</td>'
+        +'<td>'+r.gamesLost+'</td>'
+        +'<td>'+r.att+'</td>'
+        +(isAdmin?'<td style="color:#856404">'+r.byes+'</td>':'')
+        +'</tr>';
+    }
+    h+='</table></div>';
+    var totalMatches=0,totalScored=0;
+    rows.forEach(function(r){ totalMatches+=r.total; totalScored+=r.gamesWon; });
+    if(totalMatches>0){
+      h+='<div style="margin-top:10px;font-size:.82rem;color:#666">'+Math.round(totalMatches/2)+' matches recorded · '+totalScored+' total games this season</div>';
+    }
   }
-  h += '</table></div>';
 
-  var totalMatches=0, totalScored=0;
-  rows.forEach(function(r){ totalMatches+=r.total; totalScored+=r.gamesWon; });
-  if(totalMatches>0){
-    h += '<div style="margin-top:10px;font-size:.82rem;color:#666">'      +Math.round(totalMatches/2)+' matches recorded · '+totalScored+' total games this season</div>';
+  // ── PER SESSION VIEW ───────────────────────────────────
+  else if(viewMode==='per_session'){
+    var dates=(S.seasons[season]||[]).slice().sort();
+    var sessionDates=dates.filter(function(d){ var sess=S.sessions[d]; return sess&&sess.assignments; });
+    if(!sessionDates.length){
+      h+='<div class="alert alert-info">No sessions with recorded data yet.</div>';
+    } else {
+      // Session selector
+      var selDate=S._statsSessionDate&&sessionDates.indexOf(S._statsSessionDate)>=0?S._statsSessionDate:sessionDates[sessionDates.length-1];
+      S._statsSessionDate=selDate;
+      h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Session</label>'
+        +'<select id="stats-session-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">';
+      for(var di=sessionDates.length-1;di>=0;di--){
+        h+='<option value="'+sessionDates[di]+'"'+(sessionDates[di]===selDate?' selected':'')+'>'+fmtDate(sessionDates[di])+'</option>';
+      }
+      h+='</select></div>';
+
+      var sess=S.sessions[selDate];
+      var sessionStats=buildSessionStats(selDate, sess);
+
+      var sRows=S.players.map(function(p){
+        var ss=sessionStats[String(p.id)]||{wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+        var total=ss.wins+ss.losses;
+        var winPct=total>0?Math.round((ss.wins/total)*100):null;
+        return{p:p,wins:ss.wins,losses:ss.losses,gamesWon:ss.gamesWon,gamesLost:ss.gamesLost,byes:ss.byes,total:total,winPct:winPct};
+      });
+      sRows.sort(function(a,b){
+        if(b.wins!==a.wins) return b.wins-a.wins;
+        return b.gamesWon-a.gamesWon;
+      });
+      h+='<div class="sticky-table-wrap">'
+        +'<table><tr><th>#</th><th>Name</th><th>M Won</th><th>M Lost</th><th>Win%</th><th>G Won</th><th>G Lost</th>'+(isAdmin?'<th>Byes</th>':'')+'</tr>';
+      for(var i=0;i<sRows.length;i++){
+        var r=sRows[i];
+        var winPctStr=r.winPct!==null?r.winPct+'%':'—';
+        h+='<tr>'
+          +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'
+          +'<td><strong>'+esc(r.p.name)+'</strong></td>'
+          +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'
+          +'<td style="color:#721c24">'+r.losses+'</td>'
+          +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'
+          +'<td>'+r.gamesWon+'</td>'
+          +'<td>'+r.gamesLost+'</td>'
+          +(isAdmin?'<td style="color:#856404">'+r.byes+'</td>':'')
+          +'</tr>';
+      }
+      h+='</table></div>';
+    }
+  }
+
+  // ── PARTNER STATS VIEW ─────────────────────────────────
+  else if(viewMode==='partners'){
+    var dates=(S.seasons[season]||[]).slice().sort();
+
+    // Sub-view: season_total or per_session
+    var partSubView=S._partnerSubView||'season_total';
+    h+='<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'
+      +'<button class="btn '+(partSubView==='season_total'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="season_total">Season Total</button>'
+      +'<button class="btn '+(partSubView==='per_session'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="per_session">Per Session</button>'
+      +'</div>';
+
+    // Player selector
+    var pOpts='<option value="">— select player —</option>';
+    for(var i=0;i<S.players.length;i++) pOpts+='<option value="'+S.players[i].id+'"'+(S._partnerFocusPid===S.players[i].id?' selected':'')+'>'+fmtId(S.players[i].id)+' '+esc(S.players[i].name)+'</option>';
+    h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Player</label>'
+      +'<select id="partner-focus-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">'+pOpts+'</select></div>';
+
+    var focusPid=S._partnerFocusPid||null;
+
+    if(!focusPid){
+      h+='<div class="alert alert-info">Select a player to view their partner stats.</div>';
+    } else {
+      var focusPlayer=getPlayer(focusPid);
+      var datesForPartner=dates;
+
+      if(partSubView==='per_session'){
+        // Session selector
+        var sessionDates2=dates.filter(function(d){ var sess=S.sessions[d]; return sess&&sess.assignments; });
+        var selDate2=S._partnerSessionDate&&sessionDates2.indexOf(S._partnerSessionDate)>=0?S._partnerSessionDate:sessionDates2[sessionDates2.length-1];
+        S._partnerSessionDate=selDate2;
+        if(sessionDates2.length){
+          h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Session</label>'
+            +'<select id="partner-session-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">';
+          for(var di2=sessionDates2.length-1;di2>=0;di2--){
+            h+='<option value="'+sessionDates2[di2]+'"'+(sessionDates2[di2]===selDate2?' selected':'')+'>'+fmtDate(sessionDates2[di2])+'</option>';
+          }
+          h+='</select></div>';
+          datesForPartner=[selDate2];
+        }
+      }
+
+      var partnerStats=buildPartnerStats(focusPid, datesForPartner);
+      var partnerKeys=Object.keys(partnerStats);
+
+      h+='<div style="font-weight:700;color:#1a5c2a;margin-bottom:10px">🤝 '+(focusPlayer?esc(focusPlayer.name):'Player')+' with each partner'+(partSubView==='per_session'&&S._partnerSessionDate?' — '+fmtDate(S._partnerSessionDate):'')+':</div>';
+
+      if(!partnerKeys.length){
+        h+='<div class="alert alert-info">No partner data found for this player'+(partSubView==='per_session'?' in this session':'in this season')+'.</div>';
+      } else {
+        var pRows=partnerKeys.map(function(pk){
+          var ps=partnerStats[pk];
+          var partP=getPlayer(parseInt(pk));
+          var winPct=ps.matches>0?Math.round((ps.matchWins/ps.matches)*100):null;
+          var gameTotal=ps.gamesWon+ps.gamesLost;
+          var gamePct=gameTotal>0?Math.round((ps.gamesWon/gameTotal)*100):null;
+          return{pk:pk,p:partP,ps:ps,winPct:winPct,gamePct:gamePct};
+        });
+        pRows.sort(function(a,b){ return b.ps.matches-a.ps.matches; });
+        h+='<div class="sticky-table-wrap">'
+          +'<table><tr><th>Partner</th><th>Matches</th><th>M Won</th><th>M Lost</th><th>M Win%</th><th>G Won</th><th>G Lost</th><th>G Win%</th></tr>';
+        for(var i=0;i<pRows.length;i++){
+          var r=pRows[i], ps=r.ps;
+          var mWinStr=r.winPct!==null?r.winPct+'%':'—';
+          var gWinStr=r.gamePct!==null?r.gamePct+'%':'—';
+          h+='<tr>'
+            +'<td><strong>'+esc(r.p?r.p.name:fmtId(parseInt(r.pk)))+'</strong></td>'
+            +'<td>'+ps.matches+'</td>'
+            +'<td style="color:#155724;font-weight:700">'+ps.matchWins+'</td>'
+            +'<td style="color:#721c24">'+ps.matchLosses+'</td>'
+            +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+mWinStr+'</span></td>'
+            +'<td>'+ps.gamesWon+'</td>'
+            +'<td>'+ps.gamesLost+'</td>'
+            +'<td><span style="background:'+(r.gamePct===null?'#eee':r.gamePct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+gWinStr+'</span></td>'
+            +'</tr>';
+        }
+        h+='</table></div>';
+      }
+    }
   }
 
   return h+'</div>';
@@ -1582,29 +1858,55 @@ function exportCSV(){
 
 
 // ── STATS CSV EXPORT ───────────────────────────────────
+function downloadCSV(csv, filename){
+  try{
+    var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  }catch(e){ showToast('Export not supported in this browser.'); }
+}
+function rowsToCsv(rows){
+  var csv='';
+  for(var i=0;i<rows.length;i++){
+    var cols=[]; for(var j=0;j<rows[i].length;j++) cols.push('"'+String(rows[i][j]).replace(/"/g,'""')+'"');
+    csv+=cols.join(',')+'\r\n';
+  }
+  return csv;
+}
 function exportStats(){
-  var season = S.currentSeason;
+  var season=S.currentSeason;
   if(!S.players.length){ showToast('No players to export.'); return; }
-  var rows=[['Player ID','Name','Season','Matches Won','Matches Lost','Games Won','Games Lost','Attendance','Byes','Total Points']];
+  var today=new Date().toISOString().slice(0,10);
+
+  // ── Season Total CSV ──
+  var seasonRows=[['Player ID','Name','Season','Matches Won','Matches Lost','Games Won','Games Lost','Attendance','Byes','Total Points']];
   for(var i=0;i<S.players.length;i++){
     var p=S.players[i];
     var st=getPlayerStats(p.id,season);
     var bc=(S.byeCounts[p.id]||{})[season]||0;
     var att=(S.playerStats[p.id]||{})[season+'_att']||0;
     var pts=calcTotalPoints(p.id,season);
-    rows.push([fmtId(p.id),p.name,season,st.wins,st.losses,st.gamesWon,st.gamesLost,att,bc,pts]);
+    seasonRows.push([fmtId(p.id),p.name,season,st.wins,st.losses,st.gamesWon,st.gamesLost,att,bc,pts]);
   }
-  var csv='';
-  for(var i=0;i<rows.length;i++){
-    var cols=[]; for(var j=0;j<rows[i].length;j++) cols.push('"'+String(rows[i][j]).replace(/"/g,'""')+'"');
-    csv+=cols.join(',')+'\r\n';
+  downloadCSV(rowsToCsv(seasonRows), 'dmv_stats_season_total_'+season.toLowerCase()+'_'+today+'.csv');
+
+  // ── Per Session CSV ──
+  var dates=(S.seasons[season]||[]).slice().sort();
+  var perRows=[['Player ID','Name','Session Date','Matches Won','Matches Lost','Games Won','Games Lost','Byes']];
+  for(var di=0;di<dates.length;di++){
+    var date=dates[di];
+    var sess=S.sessions[date]; if(!sess||!sess.assignments) continue;
+    var sessionStats=buildSessionStats(date, sess);
+    for(var i=0;i<S.players.length;i++){
+      var p=S.players[i];
+      var ss=sessionStats[p.id]||{wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
+      perRows.push([fmtId(p.id),p.name,date,ss.wins,ss.losses,ss.gamesWon,ss.gamesLost,ss.byes]);
+    }
   }
-  try{
-    var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-    a.href=url; a.download='dmv_tennis_stats_'+season.toLowerCase()+'.csv';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    showToast('Stats exported!');
-  }catch(e){ showToast('Export not supported in this browser.'); }
+  setTimeout(function(){
+    downloadCSV(rowsToCsv(perRows), 'dmv_stats_per_session_'+season.toLowerCase()+'_'+today+'.csv');
+    showToast('Exported 2 CSV files: season total + per session!');
+  }, 300);
 }
 
 // ── STATS CSV IMPORT ───────────────────────────────────
