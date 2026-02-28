@@ -487,17 +487,8 @@ function bindUser(){
   if(rs){ rs.addEventListener('change',renderRsvpStatus); rs.addEventListener('input',renderRsvpStatus); }
   var capLogin=byId('captain-login-btn'); if(capLogin) capLogin.addEventListener('click',openCaptainLogin);
   var capCancel=byId('cap-cancel-btn'); if(capCancel) capCancel.addEventListener('click',function(){ S.captainPid=null; saveLocalPrefs(); render(); });
-  var capEditRoster=byId('cap-edit-roster-btn');
-  if(capEditRoster) capEditRoster.addEventListener('click',function(){
-    var date=getActiveSession(); if(!date) return;
-    var sess=getSession(date);
-    var isCapA=S.captainPid&&S.captainPid==sess.captainA;
-    if(isCapA) sess.teamA=[]; else sess.teamB=[];
-    S.sessions[date]=sess; save(); render();
-  });
-  // Captain roster player toggles
-  var capSelected=[];
-  // Find the team battle session (same logic as captainTeamHTML)
+  // Captain roster bindings
+  // Find the team battle session
   var _cbDates=(S.seasons[S.currentSeason]||[]).slice().sort();
   var _cbToday=new Date(); _cbToday.setHours(0,0,0,0);
   var capDate=null;
@@ -510,61 +501,99 @@ function bindUser(){
   }
   var capSess=capDate?getSession(capDate):null;
   var isCapA=S.captainPid&&capSess&&S.captainPid==capSess.captainA;
+  function myCapColor(){ return isCapA?'#1e40af':'#991b1b'; }
+
+  // Build capSelected from saved team
+  var capSelected=[];
   if(S.captainPid&&capSess){
     var capTeamRaw=isCapA?(capSess.teamA||[]):(capSess.teamB||[]);
     capSelected=capTeamRaw.slice().map(function(id){ return parseInt(id); });
     if(capSelected.indexOf(parseInt(S.captainPid))<0) capSelected.push(parseInt(S.captainPid));
   }
+
+  // Helper: rebuild pair dropdown options from current capSelected
+  function buildPairOpts(){
+    var opts='<option value="">— none —</option>';
+    capSelected.forEach(function(pid){
+      var pp=getPlayer(pid);
+      opts+='<option value="'+pid+'">'+fmtId(pid)+' '+esc(pp?pp.name:fmtId(pid))+'</option>';
+    });
+    return opts;
+  }
+  function refreshPairDropdowns(){
+    var newOpts=buildPairOpts();
+    document.querySelectorAll('.cap-pair-sel').forEach(function(sel){
+      var curVal=sel.value;
+      sel.innerHTML=newOpts;
+      sel.value=curVal; // restore selection if still valid
+    });
+  }
+
+  // Player toggle buttons — prevent duplicates, show status, update pair dropdowns
   document.querySelectorAll('.cap-roster-toggle').forEach(function(btn){
     btn.addEventListener('click',function(){
       var pid=parseInt(btn.dataset.pid);
       var idx=capSelected.indexOf(pid);
-      if(idx>=0){ capSelected.splice(idx,1); }
-      else { capSelected.push(pid); }
-      var active=capSelected.indexOf(pid)>=0;
+      var active;
+      if(idx>=0){ capSelected.splice(idx,1); active=false; }
+      else { capSelected.push(pid); active=true; }
       btn.style.border='2px solid '+(active?myCapColor():'#ccc');
       btn.style.background=active?myCapColor():'#fff';
       btn.style.color=active?'#fff':'#444';
       btn.style.fontWeight=active?'700':'400';
-      btn.textContent=(active?'✓ ':'')+fmtId(pid)+' '+(getPlayer(pid)?esc(getPlayer(pid).name):fmtId(pid));
+      var pp=getPlayer(pid);
+      // Rebuild button inner HTML preserving status badge
+      var statusTxt=active?'selected':'unassigned';
+      var statusCol=active?'rgba(255,255,255,.8)':'#888';
+      btn.innerHTML=(active?'✓ ':'')+fmtId(pid)+' '+esc(pp?pp.name:fmtId(pid))
+        +'<span style="font-size:.68rem;color:'+statusCol+';font-weight:700;display:block">'+statusTxt+'</span>';
       var cnt=byId('cap-sel-count'); if(cnt) cnt.textContent=capSelected.length;
+      // Refresh pair dropdowns to only show selected players
+      refreshPairDropdowns();
     });
   });
-  function myCapColor(){ return (S.captainPid&&capSess&&S.captainPid==capSess.captainA)?'#1e40af':'#991b1b'; }
+
+  // Unsubmit roster button
+  var capUnsubmitBtn=byId('cap-unsubmit-btn');
+  if(capUnsubmitBtn) capUnsubmitBtn.addEventListener('click',function(){
+    if(!capDate||!capSess) return;
+    if(isCapA) capSess.teamA=[]; else capSess.teamB=[];
+    S.sessions[capDate]=capSess; save();
+    showToast('Roster unsubmitted. You can now edit and resubmit.');
+    render();
+  });
+
+  // Submit / Resubmit roster button
   var capSubmitBtn=byId('cap-submit-roster-btn');
   if(capSubmitBtn) capSubmitBtn.addEventListener('click',function(){
     if(!capDate||!capSess) return;
     if(capSelected.length<1){ showToast('Select at least 1 player.'); return; }
     if(capSelected.indexOf(parseInt(S.captainPid))<0) capSelected.push(parseInt(S.captainPid));
     if(isCapA) capSess.teamA=capSelected; else capSess.teamB=capSelected;
-    // Save captain pairs - read all pair rows from DOM
+    // Save pairs from DOM
     var pairsList=byId('cap-pairs-list');
     if(pairsList){
       if(!capSess.captainPairs) capSess.captainPairs={A:[],B:[]};
       var pairs=[];
-      var rows=pairsList.querySelectorAll('div');
-      // Each row has 2 selects
-      rows.forEach(function(row){
+      pairsList.querySelectorAll('div').forEach(function(row){
         var sels=row.querySelectorAll('.cap-pair-sel');
         if(sels.length===2){
-          var p1=parseInt(sels[0].value)||null;
-          var p2=parseInt(sels[1].value)||null;
+          var p1=parseInt(sels[0].value)||null, p2=parseInt(sels[1].value)||null;
           if(p1&&p2&&p1!==p2) pairs.push([p1,p2]);
         }
       });
       capSess.captainPairs[isCapA?'A':'B']=pairs;
     }
     S.sessions[capDate]=capSess; save();
-    showToast('Roster submitted! Admin will generate assignments.');
+    showToast('Roster submitted!');
     render();
   });
-  // Add Pair button — injects a new pair row
+
+  // Add Pair button — only own-team players
   var capAddPairBtn=byId('cap-add-pair-btn');
   if(capAddPairBtn) capAddPairBtn.addEventListener('click',function(){
     var pairsList=byId('cap-pairs-list'); if(!pairsList) return;
-    var capInP=capDate?getInPlayers(capDate):[];
-    var newOpts='<option value="">— none —</option>';
-    capInP.forEach(function(p){ newOpts+='<option value="'+p.id+'">'+fmtId(p.id)+' '+esc(p.name)+'</option>'; });
+    var newOpts=buildPairOpts();
     var rowNum=pairsList.children.length+1;
     var div=document.createElement('div');
     div.style.cssText='display:flex;gap:6px;margin-bottom:6px;align-items:center';
@@ -3357,22 +3386,28 @@ function captainTeamHTML(){
 
   var h='<div class="card"><h2>⚔️ Team Battle</h2>';
 
-  // Captain roster-building UI
-  if(isCaptain && !mySubmitted){
+  // Captain roster-building UI — always shown when logged in (submitted or not)
+  if(isCaptain){
     var inP=getInPlayers(date);
-    // Exclude players already on the other team
     var otherTeam=isCapA?teamB:teamA;
     var otherSet={};
     otherTeam.forEach(function(id){ otherSet[parseInt(id)]=true; });
+    // Build status map: pid -> 'team_A' | 'team_B' | 'not_assigned'
+    var teamASet={}, teamBSet={};
+    teamA.forEach(function(id){ teamASet[parseInt(id)]=true; });
+    teamB.forEach(function(id){ teamBSet[parseInt(id)]=true; });
 
     h+='<div style="background:'+myColor+';color:#fff;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
     h+='<div style="font-weight:700;font-size:1rem">👑 You are Captain of '+myLabel+'</div>';
-    h+='<div style="font-size:.82rem;opacity:.9;margin-top:2px">Select your team players below. You are automatically on your team.</div>';
+    if(mySubmitted){
+      h+='<div style="font-size:.82rem;opacity:.9;margin-top:2px">✅ Roster submitted. You can edit and resubmit below.</div>';
+    } else {
+      h+='<div style="font-size:.82rem;opacity:.9;margin-top:2px">Select your team players below, then submit.</div>';
+    }
     h+='</div>';
 
-    // Player toggle grid
+    // Player toggle grid — show all IN players with status
     var curSel=myTeam.slice().map(function(id){ return parseInt(id); });
-    // ensure captain is always in
     if(curSel.indexOf(parseInt(myPid))<0) curSel.push(parseInt(myPid));
 
     h+='<div style="margin-bottom:12px">';
@@ -3384,26 +3419,45 @@ function captainTeamHTML(){
       var isMe=pid2===parseInt(myPid);
       var inOther=otherSet[pid2];
       var sel=curSel.indexOf(pid2)>=0;
+      // Status label
+      var statusLabel, statusColor;
+      if(teamASet[pid2]){ statusLabel='Team A'; statusColor='#1e40af'; }
+      else if(teamBSet[pid2]){ statusLabel='Team B'; statusColor='#991b1b'; }
+      else { statusLabel='unassigned'; statusColor='#888'; }
       if(inOther){
-        // Disabled — on other team
-        h+='<button type="button" disabled style="padding:5px 12px;border-radius:20px;border:2px solid #ccc;background:#f5f5f5;color:#bbb;font-size:.82rem;cursor:not-allowed">'+fmtId(pid2)+' '+esc(p.name)+' (other team)</button>';
+        h+='<button type="button" disabled style="padding:5px 12px;border-radius:20px;border:2px solid #ccc;background:#f5f5f5;color:#bbb;font-size:.82rem;cursor:not-allowed;display:flex;flex-direction:column;align-items:center;gap:1px">';
+        h+=fmtId(pid2)+' '+esc(p.name);
+        h+='<span style="font-size:.68rem;color:'+statusColor+';font-weight:700">'+statusLabel+'</span>';
+        h+='</button>';
       } else {
-        h+='<button type="button" class="cap-roster-toggle" data-pid="'+pid2+'" '+(isMe?'disabled':'')+' style="padding:5px 12px;border-radius:20px;border:2px solid '+(sel?myColor:'#ccc')+';background:'+(sel?myColor:'#fff')+';color:'+(sel?'#fff':'#444')+';font-weight:'+(sel?'700':'400')+';font-size:.82rem;cursor:'+(isMe?'not-allowed':'pointer')+'">'+
-          (isMe?'👑 ':sel?'✓ ':'')+fmtId(pid2)+' '+esc(p.name)+
-          '</button>';
+        h+='<button type="button" class="cap-roster-toggle" data-pid="'+pid2+'" '+(isMe?'disabled':'')+' style="padding:5px 12px;border-radius:20px;border:2px solid '+(sel?myColor:'#ccc')+';background:'+(sel?myColor:'#fff')+';color:'+(sel?'#fff':'#444')+';font-weight:'+(sel?'700':'400')+';font-size:.82rem;cursor:'+(isMe?'not-allowed':'pointer')+';display:flex;flex-direction:column;align-items:center;gap:1px">';
+        h+=(isMe?'👑 ':sel?'✓ ':'')+fmtId(pid2)+' '+esc(p.name);
+        h+='<span style="font-size:.68rem;color:'+(sel?'rgba(255,255,255,.8)':statusColor)+';font-weight:700">'+statusLabel+'</span>';
+        h+='</button>';
       }
     }
     h+='</div></div>';
 
     h+='<div style="margin-top:4px;font-size:.8rem;color:#888">Selected: <span id="cap-sel-count">'+curSel.length+'</span> players</div>';
-    // Optional: pair groupings — all IN players available (not restricted to own team)
+
+    // Pair groupings — only show own-team players
     h+='<div style="margin-top:12px;border:1.5px solid #ddd;border-radius:8px;padding:10px">';
     h+='<div style="font-weight:700;font-size:.85rem;margin-bottom:6px;color:'+myColor+'">🔒 Optional: Pair Groupings</div>';
-    h+='<div style="font-size:.78rem;color:#666;margin-bottom:8px">Specify partners who should play together. Any IN player can be paired. Leave blank to auto-pair.</div>';
+    h+='<div style="font-size:.78rem;color:#666;margin-bottom:8px">Specify partners from your team. Leave blank to auto-pair.</div>';
     var existPairs=isCapA?(sess.captainPairs&&sess.captainPairs.A||[]):(sess.captainPairs&&sess.captainPairs.B||[]);
+    // Only own-team players in pair dropdowns
     var pairOpts2='<option value="">— none —</option>';
     for(var pi2=0;pi2<inP.length;pi2++){
-      pairOpts2+='<option value="'+inP[pi2].id+'">'+fmtId(inP[pi2].id)+' '+esc(inP[pi2].name)+'</option>';
+      var pp2=inP[pi2], pid3=parseInt(pp2.id);
+      if(isCapA&&teamASet[pid3]) pairOpts2+='<option value="'+pid3+'">'+fmtId(pid3)+' '+esc(pp2.name)+'</option>';
+      else if(!isCapA&&teamBSet[pid3]) pairOpts2+='<option value="'+pid3+'">'+fmtId(pid3)+' '+esc(pp2.name)+'</option>';
+    }
+    // If no team submitted yet, show all unassigned players as options
+    if(pairOpts2==='<option value="">— none —</option>'){
+      for(var pi2=0;pi2<inP.length;pi2++){
+        var pp2=inP[pi2], pid3=parseInt(pp2.id);
+        if(!otherSet[pid3]) pairOpts2+='<option value="'+pid3+'">'+fmtId(pid3)+' '+esc(pp2.name)+'</option>';
+      }
     }
     var numPairSlots=Math.max(2, existPairs.length+1);
     h+='<div id="cap-pairs-list">';
@@ -3422,23 +3476,18 @@ function captainTeamHTML(){
     h+='</div>';
     h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
     h+='<button class="btn btn-secondary" id="cap-cancel-btn">← Back</button>';
-    h+='<button class="btn btn-green" id="cap-submit-roster-btn" style="flex:1">Submit '+myLabel+' Roster ✓</button>';
+    if(mySubmitted){
+      h+='<button class="btn btn-danger btn-sm" id="cap-unsubmit-btn" style="flex:0">Unsubmit Roster</button>';
+    }
+    h+='<button class="btn btn-green" id="cap-submit-roster-btn" style="flex:1">'+(mySubmitted?'Resubmit':'Submit')+' '+myLabel+' Roster ✓</button>';
     h+='</div>';
 
   } else {
-    // Read-only roster display (non-captain or already submitted)
-    if(isCaptain && mySubmitted){
-      h+='<div style="background:#d4edda;border:1.5px solid #1a5c2a;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
-      h+='<div style="font-weight:700;color:#155724">✅ Your roster has been submitted!</div>';
-      h+='<div style="font-size:.82rem;color:#155724;margin-top:2px">Admin will generate court assignments once both rosters are ready.</div>';
-      h+='<button class="btn btn-secondary btn-sm" id="cap-edit-roster-btn" style="margin-top:8px">Edit Roster</button>';
-      h+='</div>';
-    } else if(!isCaptain){
-      h+='<div style="background:#fff3cd;border:1.5px solid #e6ac00;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:.85rem">';
-      h+='<button class="btn btn-secondary btn-sm" id="captain-login-btn" style="margin-right:8px">👑 Captain Login</button>';
-      h+='<span style="color:#856404">Are you a captain? Log in to select your team.</span>';
-      h+='</div>';
-    }
+    // Read-only roster display (non-captain)
+    h+='<div style="background:#fff3cd;border:1.5px solid #e6ac00;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:.85rem">';
+    h+='<button class="btn btn-secondary btn-sm" id="captain-login-btn" style="margin-right:8px">👑 Captain Login</button>';
+    h+='<span style="color:#856404">Are you a captain? Log in to select your team.</span>';
+    h+='</div>';
     h+='<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">';
     h+=rosterCard(teamA, sess.captainA, '🔵 Team A', '#1e40af', '#dbeafe');
     h+=rosterCard(teamB, sess.captainB, '🔴 Team B', '#991b1b', '#fee2e2');
