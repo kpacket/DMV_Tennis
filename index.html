@@ -511,46 +511,82 @@ function bindUser(){
     if(capSelected.indexOf(parseInt(S.captainPid))<0) capSelected.push(parseInt(S.captainPid));
   }
 
-  // Helper: rebuild pair dropdown options from current capSelected
-  function buildPairOpts(){
+  // Helper: compute which pids are currently paired (appear in any complete pair row)
+  function getPairedSet(){
+    var paired={};
+    document.querySelectorAll('#cap-pairs-list > div').forEach(function(row){
+      var sels=row.querySelectorAll('.cap-pair-sel');
+      if(sels.length===2){
+        var p1=parseInt(sels[0].value)||null, p2=parseInt(sels[1].value)||null;
+        if(p1&&p2&&p1!==p2){ paired[p1]=true; paired[p2]=true; }
+      }
+    });
+    return paired;
+  }
+
+  // Rebuild pair dropdown options from current capSelected, annotating paired players
+  function buildPairOpts(pairedSet){
+    if(!pairedSet) pairedSet=getPairedSet();
     var opts='<option value="">— none —</option>';
     capSelected.forEach(function(pid){
       var pp=getPlayer(pid);
-      opts+='<option value="'+pid+'">'+fmtId(pid)+' '+esc(pp?pp.name:fmtId(pid))+'</option>';
+      var label=fmtId(pid)+' '+esc(pp?pp.name:fmtId(pid));
+      if(pairedSet[pid]) label+=' (paired)';
+      opts+='<option value="'+pid+'">'+label+'</option>';
     });
     return opts;
   }
+
+  // Refresh all pair dropdowns preserving current selections, with paired annotations
   function refreshPairDropdowns(){
-    var newOpts=buildPairOpts();
+    var pairedSet=getPairedSet();
+    var newOpts=buildPairOpts(pairedSet);
     document.querySelectorAll('.cap-pair-sel').forEach(function(sel){
       var curVal=sel.value;
       sel.innerHTML=newOpts;
-      sel.value=curVal; // restore selection if still valid
+      sel.value=curVal;
     });
   }
 
-  // Player toggle buttons — prevent duplicates, show status, update pair dropdowns
+  // Refresh all player toggle button labels to reflect current capSelected state
+  function refreshRosterButtons(){
+    var pairedSet=getPairedSet();
+    var myTeamLabel=isCapA?'Team A':'Team B';
+    document.querySelectorAll('.cap-roster-toggle').forEach(function(b){
+      var pid2=parseInt(b.dataset.pid);
+      var active=capSelected.indexOf(pid2)>=0;
+      var paired=pairedSet[pid2];
+      b.style.border='2px solid '+(active?myCapColor():'#ccc');
+      b.style.background=active?myCapColor():'#fff';
+      b.style.color=active?'#fff':'#444';
+      b.style.fontWeight=active?'700':'400';
+      var pp2=getPlayer(pid2);
+      var statusTxt=active?(paired?'paired':myTeamLabel):'unassigned';
+      var statusCol=active?'rgba(255,255,255,.8)':'#888';
+      b.innerHTML=(active?'✓ ':'')+fmtId(pid2)+' '+esc(pp2?pp2.name:fmtId(pid2))
+        +'<span style="font-size:.68rem;color:'+statusCol+';font-weight:700;display:block">'+statusTxt+'</span>';
+    });
+    var cnt=byId('cap-sel-count'); if(cnt) cnt.textContent=capSelected.length;
+  }
+
+  // Player toggle buttons — update status instantly, refresh pairs
   document.querySelectorAll('.cap-roster-toggle').forEach(function(btn){
     btn.addEventListener('click',function(){
       var pid=parseInt(btn.dataset.pid);
       var idx=capSelected.indexOf(pid);
-      var active;
-      if(idx>=0){ capSelected.splice(idx,1); active=false; }
-      else { capSelected.push(pid); active=true; }
-      btn.style.border='2px solid '+(active?myCapColor():'#ccc');
-      btn.style.background=active?myCapColor():'#fff';
-      btn.style.color=active?'#fff':'#444';
-      btn.style.fontWeight=active?'700':'400';
-      var pp=getPlayer(pid);
-      // Rebuild button inner HTML preserving status badge
-      var statusTxt=active?'selected':'unassigned';
-      var statusCol=active?'rgba(255,255,255,.8)':'#888';
-      btn.innerHTML=(active?'✓ ':'')+fmtId(pid)+' '+esc(pp?pp.name:fmtId(pid))
-        +'<span style="font-size:.68rem;color:'+statusCol+';font-weight:700;display:block">'+statusTxt+'</span>';
-      var cnt=byId('cap-sel-count'); if(cnt) cnt.textContent=capSelected.length;
-      // Refresh pair dropdowns to only show selected players
+      if(idx>=0){ capSelected.splice(idx,1); }
+      else { capSelected.push(pid); }
+      refreshRosterButtons();
       refreshPairDropdowns();
     });
+  });
+
+  // When any pair dropdown changes, refresh buttons and all dropdowns for paired annotations
+  document.addEventListener('change',function(e){
+    if(e.target&&e.target.classList.contains('cap-pair-sel')){
+      refreshRosterButtons();
+      refreshPairDropdowns();
+    }
   });
 
   // Unsubmit roster button
@@ -602,6 +638,8 @@ function bindUser(){
       +'<span style="font-size:.78rem;color:#888">+</span>'
       +'<select class="cap-pair-sel" style="flex:1;padding:5px;border-radius:6px;border:1.5px solid #ccc;font-size:.8rem">'+newOpts+'</select>';
     pairsList.appendChild(div);
+    refreshRosterButtons();
+    refreshPairDropdowns();
   });
   var pcSubmit=byId('pc-submit-btn'); if(pcSubmit) pcSubmit.addEventListener('click',submitPlayersChoice);
   bindScoreButtons(); bindHighlightSelect(); bindStatsControls();
