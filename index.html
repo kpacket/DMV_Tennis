@@ -486,6 +486,8 @@ function bindUser(){
   var rs=byId('rsvp-sel');
   if(rs){ rs.addEventListener('change',renderRsvpStatus); rs.addEventListener('input',renderRsvpStatus); }
   var capLogin=byId('captain-login-btn'); if(capLogin) capLogin.addEventListener('click',openCaptainLogin);
+  var schedDateSel=byId('schedule-date-sel');
+  if(schedDateSel) schedDateSel.addEventListener('change',function(){ S._scheduleViewDate=schedDateSel.value; render(); });
   var capCancel=byId('cap-cancel-btn'); if(capCancel) capCancel.addEventListener('click',function(){ S.captainPid=null; saveLocalPrefs(); render(); });
   // Captain roster bindings
   // Find the team battle session
@@ -664,22 +666,6 @@ function bindStatsControls(){
   var bonusBtn=byId('bonus-pts-btn');
   if(bonusBtn) bonusBtn.addEventListener('click',openBonusPointsModal);
   // Custom range filter bindings
-  document.querySelectorAll('.cr-season-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      if(!S._crSeasons) S._crSeasons=[];
-      var s=btn.dataset.s, idx=S._crSeasons.indexOf(s);
-      if(idx>=0) S._crSeasons.splice(idx,1); else S._crSeasons.push(s);
-      render();
-    });
-  });
-  document.querySelectorAll('.cr-year-btn').forEach(function(btn){
-    btn.addEventListener('click',function(){
-      if(!S._crYears) S._crYears=[];
-      var y=btn.dataset.y, idx=S._crYears.indexOf(y);
-      if(idx>=0) S._crYears.splice(idx,1); else S._crYears.push(y);
-      render();
-    });
-  });
   var crApply=byId('cr-apply-btn');
   if(crApply) crApply.addEventListener('click',function(){
     var f=byId('cr-from'), t=byId('cr-to');
@@ -688,7 +674,7 @@ function bindStatsControls(){
   });
   var crClear=byId('cr-clear-btn');
   if(crClear) crClear.addEventListener('click',function(){
-    S._crFrom=''; S._crTo=''; S._crSeasons=[]; S._crYears=[];
+    S._crFrom=''; S._crTo='';
     render();
   });
 }
@@ -854,42 +840,77 @@ function matchCountsSummaryHTML(sess, inP){
 
 // ── SCHEDULE ───────────────────────────────────────────
 function scheduleHTML(isAdmin){
-  var date=isAdmin?S.selectedDate:getActiveSession();
-  if(!date) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No date available.</div></div>';
-  var sess=getSession(date);
-  if(sess.playersChoice){
-    return playersChoiceCourtGrid(sess, date, isAdmin);
+  if(isAdmin){
+    var date=S.selectedDate;
+    if(!date) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No date available.</div></div>';
+    var sess=getSession(date);
+    if(sess.playersChoice) return playersChoiceCourtGrid(sess, date, true);
+    if(!sess.assignments) return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No assignments generated yet.</div></div>';
+    var inP=getInPlayers(date);
+    var hlOpts='<option value="">-- Select your name --</option>';
+    for(var i=0;i<inP.length;i++) hlOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' - '+esc(inP[i].name)+'</option>';
+    var mcHTML=matchCountsSummaryHTML(sess,inP);
+    var tbWinnerHTML=sess.teamBattle?teamBattleWinnerHTML(sess):'';
+    return '<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'      +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'      +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts+'</select></div>'      +tbWinnerHTML+mcHTML      +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div></div>';
   }
-  // For users: teamBattle assignments show automatically once generated (no post required)
-  // All other modes require admin to post
-  if(!isAdmin){
-    var assignmentsReady=sess.assignments&&sess.assignments.rounds;
-    var isTeamBattle=sess.teamBattle;
-    if(!assignmentsReady&&!isTeamBattle)
-      return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
-    if(!assignmentsReady&&isTeamBattle){
-      // Show team rosters even before assignments generated
-      return teamBattleUserCard(sess, date, false);
+
+  // ── USER VIEW: session history pulldown ──
+  var allDates=[];
+  Object.keys(S.seasons||{}).forEach(function(s){
+    (S.seasons[s]||[]).forEach(function(d){
+      var se=S.sessions[d]; if(!se) return;
+      var hasA=se.assignments&&se.assignments.rounds;
+      if(se.playersChoice&&hasA){ allDates.push(d); return; }
+      if(se.teamBattle){ allDates.push(d); return; }
+      if(hasA&&se.posted) allDates.push(d);
+    });
+  });
+  allDates.sort();
+
+  var defaultDate=allDates.length?allDates[allDates.length-1]:null;
+  var selDate=S._scheduleViewDate&&allDates.indexOf(S._scheduleViewDate)>=0?S._scheduleViewDate:defaultDate;
+  S._scheduleViewDate=selDate;
+
+  var pickerHTML='';
+  if(allDates.length>1){
+    pickerHTML='<div class="card" style="padding:10px 14px;margin-bottom:0">';
+    pickerHTML+='<label style="font-size:.85rem;font-weight:700;display:block;margin-bottom:6px">📅 View Session</label>';
+    pickerHTML+='<select id="schedule-date-sel" style="width:100%;padding:8px;border-radius:6px;border:1.5px solid #ccc;font-size:.9rem">';
+    for(var di=allDates.length-1;di>=0;di--){
+      var d2=allDates[di], se2=S.sessions[d2];
+      var tag=se2&&se2.teamBattle?' ⚔️':se2&&se2.playersChoice?' 🎾':'';
+      pickerHTML+='<option value="'+d2+'"'+( d2===selDate?' selected':'')+'>'+fmtDate(d2)+tag+'</option>';
     }
-    if(assignmentsReady&&!isTeamBattle&&!sess.posted)
-      return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">Assignments not yet posted by admin.</div></div>';
+    pickerHTML+='</select></div>';
   }
-  if(!sess.assignments)
-    return '<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No assignments generated yet.</div></div>';
-  var inP=getInPlayers(date);
+
+  if(!selDate){
+    return pickerHTML+'<div class="card"><h2>🏆 Court Assignments</h2><div class="alert alert-info">No sessions posted yet.</div></div>';
+  }
+
+  var sess=getSession(selDate);
+  if(!sess) return pickerHTML+'<div class="card"><div class="alert alert-info">Session not found.</div></div>';
+
+  if(sess.playersChoice){
+    return pickerHTML+playersChoiceCourtGrid(sess, selDate, false);
+  }
+
+  if(sess.teamBattle){
+    var tbHeader=teamBattleRostersHTML(sess);
+    var tbWinner=teamBattleWinnerHTML(sess);
+    if(!sess.assignments||!sess.assignments.rounds){
+      return pickerHTML+tbHeader+'<div class="card"><h2>🏆 Court Assignments — '+fmtDate(selDate)+'</h2><div class="alert alert-info">Court assignments will appear here once generated by admin.</div></div>';
+    }
+    var inP2=getInPlayers(selDate);
+    var hlOpts2='<option value="">-- Select your name --</option>';
+    for(var i=0;i<inP2.length;i++) hlOpts2+='<option value="'+inP2[i].id+'">'+fmtId(inP2[i].id)+' - '+esc(inP2[i].name)+'</option>';
+    return pickerHTML+tbHeader+'<div class="card"><h2>🏆 Court Assignments — '+fmtDate(selDate)+'</h2>'      +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'      +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts2+'</select></div>'      +tbWinner+matchCountsSummaryHTML(sess,inP2)      +'<div id="rounds-display">'+roundsHTML(sess,selDate,null)+'</div></div>';
+  }
+
+  var inP=getInPlayers(selDate);
   var hlOpts='<option value="">-- Select your name --</option>';
   for(var i=0;i<inP.length;i++) hlOpts+='<option value="'+inP[i].id+'">'+fmtId(inP[i].id)+' - '+esc(inP[i].name)+'</option>';
-  // For teamBattle on user side, prepend team rosters above court assignments
-  var teamBattleHeader='';
-  if(!isAdmin&&sess.teamBattle) teamBattleHeader=teamBattleRostersHTML(sess);
-  var mcHTML=matchCountsSummaryHTML(sess,inP);
-  var tbWinnerHTML=sess.teamBattle?teamBattleWinnerHTML(sess):'';
-  return teamBattleHeader+'<div class="card"><h2>🏆 Court Assignments — '+fmtDate(date)+'</h2>'
-    +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'
-    +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts+'</select></div>'
-    +tbWinnerHTML
-    +mcHTML
-    +'<div id="rounds-display">'+roundsHTML(sess,date,null)+'</div></div>';
+  return pickerHTML+'<div class="card"><h2>🏆 Court Assignments — '+fmtDate(selDate)+'</h2>'    +'<div style="background:#fffde7;border:1.5px solid #f5a623;border-radius:8px;padding:8px 12px;margin-bottom:12px">'    +'<label>🔍 Highlight My Matches</label><select id="hl-sel">'+hlOpts+'</select></div>'    +matchCountsSummaryHTML(sess,inP)    +'<div id="rounds-display">'+roundsHTML(sess,selDate,null)+'</div></div>';
 }
 
 // Renders just the two team roster cards (used in scheduleHTML for teamBattle)
@@ -1078,6 +1099,7 @@ function bindAdmin(){
   var exportBtn=byId('export-btn'); if(exportBtn) exportBtn.addEventListener('click',exportCSV);
   var clearStatsBtn=byId('clear-stats-btn'); if(clearStatsBtn) clearStatsBtn.addEventListener('click',openClearStats);
   var exportStatsBtn=byId('export-stats-btn'); if(exportStatsBtn) exportStatsBtn.addEventListener('click',exportStats);
+  var importStatsBtn=byId('import-stats-btn'); if(importStatsBtn) importStatsBtn.addEventListener('click',openImportStats);
   var attBtn=byId('att-btn'); if(attBtn) attBtn.addEventListener('click',openAttendanceModal);
   var cfgSave=byId('cfg-save-btn'); if(cfgSave) cfgSave.addEventListener('click',savePointsConfig);
   var exclBtn=byId('cfg-exclude-outliers-btn');
@@ -1646,6 +1668,7 @@ function byesHTML(){
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'
       +'<button class="btn btn-secondary" id="clear-stats-btn">🗑 Clear Stats</button>'
       +'<button class="btn btn-secondary" id="export-stats-btn">Export Stats .CSV</button>'
+      +'<button class="btn btn-secondary" id="import-stats-btn">📥 Import Stats</button>'
       +'<button class="btn btn-secondary" id="att-btn">Mark Attendance</button>'
       +'</div>';
   }
@@ -1667,7 +1690,7 @@ function byesHTML(){
     +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     +'<button class="btn '+(viewMode==='partners'?'btn-green':'btn-secondary')+' btn-sm" data-stats-view="partners">Partner Stats</button>'
-    +(viewMode==='partners'?'<button class="btn '+(partSubView==='season_total'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="season_total">Season</button><button class="btn '+(partSubView==='per_session'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="per_session">Session</button><button class="btn '+(partSubView==='custom_range'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="custom_range">Range</button>':'')
+    +(viewMode==='partners'?'<button class="btn '+(partSubView==='season_total'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="season_total" style="border:2px solid #1a5c2a">Season</button><button class="btn '+(partSubView==='per_session'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="per_session" style="border:2px solid #1a5c2a">Session</button><button class="btn '+(partSubView==='custom_range'?'btn-primary':'btn-secondary')+' btn-sm" data-partner-sub="custom_range" style="border:2px solid #1a5c2a">Range</button>':'')
     +'</div>'
     +'</div>';
 
@@ -1680,33 +1703,15 @@ function byesHTML(){
 
   if(viewMode==='custom_range'){
     var crFrom=S._crFrom||'', crTo=S._crTo||'';
-    var crSeasons=S._crSeasons||[];
-    var crYears=S._crYears||[];
     h+='<div style="border:1.5px solid #c8e6c9;border-radius:10px;padding:12px;margin-bottom:12px">'
-      +'<div style="font-weight:700;font-size:.85rem;margin-bottom:8px;color:#1a5c2a">📅 Custom Range Filter</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+      +'<div style="font-weight:700;font-size:.85rem;margin-bottom:8px;color:#1a5c2a">📅 Custom Date Range</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
       +'<div><label style="font-size:.78rem;font-weight:600">From Date</label>'
       +'<input type="date" id="cr-from" value="'+crFrom+'" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #ccc"></div>'
       +'<div><label style="font-size:.78rem;font-weight:600">To Date</label>'
       +'<input type="date" id="cr-to" value="'+crTo+'" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #ccc"></div>'
       +'</div>'
-      +'<div style="margin-bottom:8px"><label style="font-size:.78rem;font-weight:600">Or select Seasons:</label>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-    allSeasons.forEach(function(s){
-      var sel=crSeasons.indexOf(s)>=0;
-      h+='<button type="button" class="cr-season-btn btn btn-sm '+(sel?'btn-green':'btn-secondary')+'" data-s="'+s+'" style="font-size:.78rem">'+seasonLabel(s)+'</button>';
-    });
-    h+='</div></div>'
-      +'<div style="margin-bottom:8px"><label style="font-size:.78rem;font-weight:600">Or select Years:</label>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-    var crYearSet={};
-    allSeasons.forEach(function(s){ (S.seasons[s]||[]).forEach(function(d){ crYearSet[d.slice(0,4)]=true; }); });
-    Object.keys(crYearSet).sort().reverse().forEach(function(y){
-      var sel=crYears.indexOf(y)>=0;
-      h+='<button type="button" class="cr-year-btn btn btn-sm '+(sel?'btn-green':'btn-secondary')+'" data-y="'+y+'" style="font-size:.78rem">'+y+'</button>';
-    });
-    h+='</div></div>'
-      +'<button class="btn btn-green btn-sm" id="cr-apply-btn">Apply Filter</button>'
+      +'<button class="btn btn-green btn-sm" id="cr-apply-btn">Apply</button>'
       +'<button class="btn btn-secondary btn-sm" style="margin-left:6px" id="cr-clear-btn">Clear</button>'
       +'</div>';
   } else if(viewMode==='season_total'||viewMode==='partners'){
@@ -1720,19 +1725,12 @@ function byesHTML(){
   if(viewMode==='custom_range'){
     // Collect matching dates based on filter settings
     var crFrom=S._crFrom||'', crTo=S._crTo||'';
-    var crSeasons=S._crSeasons||[], crYears=S._crYears||[];
     var crDates=[];
     var crSeasonSet={}; // which seasons contributed
     allSeasons.forEach(function(s){
       (S.seasons[s]||[]).forEach(function(d){
-        var inDateRange=(!crFrom||d>=crFrom)&&(!crTo||d<=crTo);
-        var inSeason=crSeasons.length>0&&crSeasons.indexOf(s)>=0;
-        var inYear=crYears.length>0&&crYears.indexOf(d.slice(0,4))>=0;
-        var noFilter=!crFrom&&!crTo&&crSeasons.length===0&&crYears.length===0;
-        if(noFilter||inDateRange||inSeason||inYear){
-          crDates.push({date:d,season:s});
-          crSeasonSet[s]=true;
-        }
+        var passes=(!crFrom||d>=crFrom)&&(!crTo||d<=crTo);
+        if(passes){ crDates.push({date:d,season:s}); crSeasonSet[s]=true; }
       });
     });
     var crSeasonKeys=Object.keys(crSeasonSet);
@@ -1825,19 +1823,20 @@ function byesHTML(){
 
   // ── PER SESSION VIEW ───────────────────────────────────
   else if(viewMode==='per_session'){
-    var selSeasonPS=selSeasonForSession||season;
-    var sessionDates=(S.seasons[selSeasonPS]||[]).filter(function(d){ var se=S.sessions[d]; return se&&se.assignments; }).sort();
-    h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Season</label>'
-      +'<select id="stats-season-for-view-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">';
-    SEASONS.forEach(function(s2){ h+='<option value="'+s2+'"'+(s2===selSeasonPS?' selected':'')+'>'+s2+'</option>'; });
-    allSeasons.forEach(function(s2){ var sdates=(S.seasons[s2]||[]).slice().sort(); h+='<option value="'+s2+'"'+(s2===selSeasonPS?' selected':'')+'>'+s2+(sdates.length?' ('+sdates[0]+')':'')+'</option>'; });
+    // Collect all dates across ALL seasons that have assignments
+    var sessionDates=[];
+    allSeasons.forEach(function(s2){
+      (S.seasons[s2]||[]).forEach(function(d){
+        var se=S.sessions[d]; if(se&&se.assignments) sessionDates.push(d);
+      });
+    });
+    sessionDates.sort();
     if(!sessionDates.length){
-      h+='<div class="alert alert-info">No sessions with recorded data yet for this season.</div>';
+      h+='<div class="alert alert-info">No sessions with recorded data yet.</div>';
     } else {
       var selDate=S._statsSessionDate&&sessionDates.indexOf(S._statsSessionDate)>=0?S._statsSessionDate:sessionDates[sessionDates.length-1];
       S._statsSessionDate=selDate;
-      h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Session</label>'
-        +'<select id="stats-session-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">';
+      h+='<div style="margin-bottom:12px"><label style="font-size:.85rem;font-weight:700">Select Session</label>'        +'<select id="stats-session-sel" style="padding:8px;border-radius:6px;border:1.5px solid #ccc;width:100%">';
       for(var di=sessionDates.length-1;di>=0;di--){
         h+='<option value="'+sessionDates[di]+'"'+(sessionDates[di]===selDate?' selected':'')+'>'+fmtDate(sessionDates[di])+'</option>';
       }
@@ -1850,24 +1849,15 @@ function byesHTML(){
         var ss=sessionStats[String(p.id)]||{wins:0,losses:0,gamesWon:0,gamesLost:0,byes:0};
         var total=ss.wins+ss.losses;
         var winPct=total>0?Math.round((ss.wins/total)*100):null;
-        return{p:p,wins:ss.wins,losses:ss.losses,gamesWon:ss.gamesWon,gamesLost:ss.gamesLost,byes:ss.byes,total:total,winPct:winPct};
+        var pts=calcTotalPoints(p.id, selDate);
+        return{p:p,wins:ss.wins,losses:ss.losses,gamesWon:ss.gamesWon,gamesLost:ss.gamesLost,byes:ss.byes,total:total,winPct:winPct,pts:pts};
       });
-      sRows.sort(function(a,b){ return b.wins!==a.wins?b.wins-a.wins:b.gamesWon-a.gamesWon; });
-      h+='<div class="sticky-table-wrap">'
-        +'<table><tr><th>#</th><th>Name</th><th>M Won</th><th>M Lost</th><th>Win%</th><th>G Won</th><th>G Lost</th>'+(isAdmin?'<th>Byes</th>':'')+'</tr>';
+      sRows.sort(function(a,b){ return b.pts!==a.pts?b.pts-a.pts:b.wins!==a.wins?b.wins-a.wins:b.gamesWon-a.gamesWon; });
+      h+='<div class="sticky-table-wrap">'        +'<table><tr><th>#</th><th>Name</th><th>Pts</th><th>M Won</th><th>M Lost</th><th>Win%</th><th>G Won</th><th>G Lost</th>'+(isAdmin?'<th>Byes</th>':'')+'</tr>';
       for(var i=0;i<sRows.length;i++){
         var r=sRows[i];
         var winPctStr=r.winPct!==null?r.winPct+'%':'—';
-        h+='<tr>'
-          +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'
-          +'<td><strong>'+esc(r.p.name)+'</strong></td>'
-          +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'
-          +'<td style="color:#721c24">'+r.losses+'</td>'
-          +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'
-          +'<td>'+r.gamesWon+'</td>'
-          +'<td>'+r.gamesLost+'</td>'
-          +(isAdmin?'<td style="color:#856404">'+r.byes+'</td>':'')
-          +'</tr>';
+        h+='<tr>'          +'<td style="color:#888;font-size:.8rem">'+(i+1)+'</td>'          +'<td><strong>'+esc(r.p.name)+'</strong></td>'          +'<td><span class="pts-badge">'+r.pts+'</span></td>'          +'<td style="color:#155724;font-weight:700">'+r.wins+'</td>'          +'<td style="color:#721c24">'+r.losses+'</td>'          +'<td><span style="background:'+(r.winPct===null?'#eee':r.winPct>=50?'#d4edda':'#f8d7da')+';padding:2px 7px;border-radius:10px;font-size:.8rem;font-weight:700">'+winPctStr+'</span></td>'          +'<td>'+r.gamesWon+'</td>'          +'<td>'+r.gamesLost+'</td>'          +(isAdmin?'<td style="color:#856404">'+r.byes+'</td>':'')          +'</tr>';
       }
       h+='</table></div>';
     }
@@ -1879,15 +1869,10 @@ function byesHTML(){
     var pDates;
     if(partSubView==='custom_range'){
       var crFrom2=S._crFrom||'', crTo2=S._crTo||'';
-      var crSeasons2=S._crSeasons||[], crYears2=S._crYears||[];
       pDates=[];
       Object.keys(S.seasons||{}).forEach(function(s){
         (S.seasons[s]||[]).forEach(function(d){
-          var inDateRange=(!crFrom2||d>=crFrom2)&&(!crTo2||d<=crTo2);
-          var inSeason=crSeasons2.length>0&&crSeasons2.indexOf(s)>=0;
-          var inYear=crYears2.length>0&&crYears2.indexOf(d.slice(0,4))>=0;
-          var noFilter=!crFrom2&&!crTo2&&crSeasons2.length===0&&crYears2.length===0;
-          if(noFilter||inDateRange||inSeason||inYear) pDates.push(d);
+          if((!crFrom2||d>=crFrom2)&&(!crTo2||d<=crTo2)) pDates.push(d);
         });
       });
     } else {
@@ -1901,32 +1886,15 @@ function byesHTML(){
     // Show calendar UI when custom_range sub-view selected
     if(partSubView==='custom_range'){
       var crFrom2=S._crFrom||'', crTo2=S._crTo||'';
-      var crSeasons2=S._crSeasons||[], crYears2=S._crYears||[];
       h+='<div style="border:1.5px solid #c8e6c9;border-radius:10px;padding:12px;margin-bottom:12px">'
-        +'<div style="font-weight:700;font-size:.85rem;margin-bottom:8px;color:#1a5c2a">Filter by Date Range</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'
+        +'<div style="font-weight:700;font-size:.85rem;margin-bottom:8px;color:#1a5c2a">📅 Custom Date Range</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
         +'<div><label style="font-size:.78rem;font-weight:600">From Date</label>'
         +'<input type="date" id="cr-from" value="'+crFrom2+'" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #ccc"></div>'
         +'<div><label style="font-size:.78rem;font-weight:600">To Date</label>'
         +'<input type="date" id="cr-to" value="'+crTo2+'" style="width:100%;padding:6px;border-radius:6px;border:1.5px solid #ccc"></div>'
         +'</div>'
-        +'<div style="margin-bottom:8px"><label style="font-size:.78rem;font-weight:600">Or select Seasons:</label>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-      allSeasons.forEach(function(s){
-        var sel=crSeasons2.indexOf(s)>=0;
-        h+='<button type="button" class="cr-season-btn btn btn-sm '+(sel?'btn-green':'btn-secondary')+'" data-s="'+s+'" style="font-size:.78rem">'+seasonLabel(s)+'</button>';
-      });
-      h+='</div></div>'
-        +'<div style="margin-bottom:8px"><label style="font-size:.78rem;font-weight:600">Or select Years:</label>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
-      var crYearSet2={};
-      allSeasons.forEach(function(s){ (S.seasons[s]||[]).forEach(function(d){ crYearSet2[d.slice(0,4)]=true; }); });
-      Object.keys(crYearSet2).sort().reverse().forEach(function(y){
-        var sel=crYears2.indexOf(y)>=0;
-        h+='<button type="button" class="cr-year-btn btn btn-sm '+(sel?'btn-green':'btn-secondary')+'" data-y="'+y+'" style="font-size:.78rem">'+y+'</button>';
-      });
-      h+='</div></div>'
-        +'<button class="btn btn-green btn-sm" id="cr-apply-btn">Apply Filter</button>'
+        +'<button class="btn btn-green btn-sm" id="cr-apply-btn">Apply</button>'
         +' <button class="btn btn-secondary btn-sm" id="cr-clear-btn">Clear</button>'
         +'</div>';
     }
@@ -2687,6 +2655,155 @@ function exportStats(){
     showToast('Exported 2 CSV files: season total + per session!');
   }, 300);
 }
+
+// ── STATS CSV IMPORT ───────────────────────────────────
+function openImportStats(){
+  var allSeasonKeys=Object.keys(S.seasons||{});
+  var season=S.currentSeason;
+
+  var sessOpts='<option value="">-- Select Session --</option>';
+  allSeasonKeys.forEach(function(s){
+    var dates=(S.seasons[s]||[]).slice().sort().reverse();
+    dates.forEach(function(d){
+      var parts=d.split('-'), label=parts.length===3?parts[1]+'/'+parts[2]+'/'+parts[0]:d;
+      sessOpts+='<option value="'+d+'|'+s+'">'+label+'</option>';
+    });
+  });
+
+  var seasonOpts='';
+  allSeasonKeys.forEach(function(s){ seasonOpts+='<option value="'+s+'">'+s+'</option>'; });
+
+  var html='<h3>📥 Import Stats from CSV</h3>';
+  html+='<div class="alert alert-info" style="margin-bottom:12px">Import will <strong>merge</strong> stats into existing data. Player matching is by Player ID.</div>';
+  html+='<div style="display:flex;flex-direction:column;gap:14px">';
+  html+='<div style="border:1.5px solid #e8f5e9;border-radius:8px;padding:14px">';
+  html+='<div style="font-weight:700;margin-bottom:4px">Option 1 — Season Total</div>';
+  html+='<div style="font-size:.8rem;color:#555;margin-bottom:8px">CSV columns: <code>Player ID, Name, Season, Matches Won, Matches Lost, Games Won, Games Lost, Attendance, Byes, Total Points</code></div>';
+  html+='<label style="font-size:.82rem;font-weight:600">Target Season</label>';
+  html+='<select id="is-season-sel" style="width:100%;padding:7px;border-radius:6px;border:1.5px solid #ccc;margin-bottom:8px">'+seasonOpts+'</select>';
+  html+='<label style="font-size:.82rem;font-weight:600">CSV File</label>';
+  html+='<input type="file" id="is-season-file" accept=".csv" style="width:100%;margin-bottom:8px">';
+  html+='<button class="btn btn-green btn-sm" id="is-season-btn">Import Season Stats</button>';
+  html+='</div>';
+  html+='<div style="border:1.5px solid #e8f5e9;border-radius:8px;padding:14px">';
+  html+='<div style="font-weight:700;margin-bottom:4px">Option 2 — Single Session</div>';
+  html+='<div style="font-size:.8rem;color:#555;margin-bottom:8px">CSV columns: <code>Player ID, Name, Session Date, Matches Won, Matches Lost, Games Won, Games Lost, Byes, Points</code></div>';
+  html+='<label style="font-size:.82rem;font-weight:600">Target Session</label>';
+  html+='<select id="is-sess-sel" style="width:100%;padding:7px;border-radius:6px;border:1.5px solid #ccc;margin-bottom:8px">'+sessOpts+'</select>';
+  html+='<label style="font-size:.82rem;font-weight:600">CSV File</label>';
+  html+='<input type="file" id="is-sess-file" accept=".csv" style="width:100%;margin-bottom:8px">';
+  html+='<button class="btn btn-green btn-sm" id="is-sess-btn">Import Session Stats</button>';
+  html+='</div>';
+  html+='</div>';
+  html+='<div id="is-result" style="margin-top:10px;font-size:.85rem"></div>';
+  html+='<div class="modal-btns"><button class="btn btn-secondary" id="m-cancel">Close</button></div>';
+  showModal(html);
+  byId('m-cancel').addEventListener('click',closeModal);
+
+  function parseCsvText(text){
+    var rows=[];
+    var lines=text.split(/\r\n|\r|\n/);
+    for(var i=0;i<lines.length;i++){
+      var line=lines[i].trim();
+      if(!line) continue;
+      var cols=[], cur='', inQ=false;
+      for(var j=0;j<line.length;j++){
+        var ch=line[j];
+        if(ch==='"'){ if(inQ&&line[j+1]==='"'){ cur+='"'; j++; } else inQ=!inQ; }
+        else if(ch===','&&!inQ){ cols.push(cur); cur=''; }
+        else cur+=ch;
+      }
+      cols.push(cur);
+      rows.push(cols.map(function(v){ return v.trim(); }));
+    }
+    return rows;
+  }
+
+  function showResult(msg, ok){
+    var el=byId('is-result');
+    if(el) el.innerHTML='<div style="padding:8px 12px;border-radius:6px;background:'+(ok?'#d4edda':'#f8d7da')+';color:'+(ok?'#155724':'#721c24')+'">'+msg+'</div>';
+  }
+
+  byId('is-season-btn').addEventListener('click',function(){
+    var selSeason=byId('is-season-sel').value;
+    var file=byId('is-season-file').files[0];
+    if(!selSeason){ showResult('Select a target season.', false); return; }
+    if(!file){ showResult('Choose a CSV file.', false); return; }
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        var rows=parseCsvText(e.target.result);
+        var dataRows=rows.filter(function(r){ return r.length>=8 && !isNaN(parseInt(r[0])); });
+        if(!dataRows.length){ showResult('No valid data rows found. Check CSV format.', false); return; }
+        if(!S.playerStats) S.playerStats={};
+        if(!S.byeCounts) S.byeCounts={};
+        var imported=0, skipped=0;
+        dataRows.forEach(function(r){
+          var pid=parseInt(r[0]);
+          if(!pid){ skipped++; return; }
+          var mWon=parseInt(r[3])||0, mLost=parseInt(r[4])||0;
+          var gWon=parseInt(r[5])||0, gLost=parseInt(r[6])||0;
+          var att=parseInt(r[7])||0, byes=parseInt(r[8])||0;
+          if(!S.playerStats[pid]) S.playerStats[pid]={};
+          var st=S.playerStats[pid][selSeason]||{wins:0,losses:0,gamesWon:0,gamesLost:0};
+          st.wins+=mWon; st.losses+=mLost; st.gamesWon+=gWon; st.gamesLost+=gLost;
+          S.playerStats[pid][selSeason]=st;
+          S.playerStats[pid][selSeason+'_att']=(S.playerStats[pid][selSeason+'_att']||0)+att;
+          if(!S.byeCounts[pid]) S.byeCounts[pid]={};
+          S.byeCounts[pid][selSeason]=(S.byeCounts[pid][selSeason]||0)+byes;
+          imported++;
+        });
+        save(); render();
+        showResult('Imported '+imported+' player rows into season "'+selSeason+'".'+(skipped?' Skipped '+skipped+' rows.':''), true);
+      }catch(err){ showResult('Error parsing CSV: '+err.message, false); }
+    };
+    reader.readAsText(file);
+  });
+
+  byId('is-sess-btn').addEventListener('click',function(){
+    var val=byId('is-sess-sel').value;
+    if(!val){ showResult('Select a target session.', false); return; }
+    var parts=val.split('|'), selDate=parts[0], selSeason=parts[1];
+    var file=byId('is-sess-file').files[0];
+    if(!file){ showResult('Choose a CSV file.', false); return; }
+    var reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        var rows=parseCsvText(e.target.result);
+        var dataRows=rows.filter(function(r){ return r.length>=7 && !isNaN(parseInt(r[0])); });
+        if(!dataRows.length){ showResult('No valid data rows found. Check CSV format.', false); return; }
+        if(!S.playerStats) S.playerStats={};
+        if(!S.byeCounts) S.byeCounts={};
+        var imported=0, skipped=0;
+        dataRows.forEach(function(r){
+          var pid=parseInt(r[0]);
+          if(!pid){ skipped++; return; }
+          var rowDate=r[2]||'';
+          // Normalize CSV date: accept yyyy-mm-dd or mm/dd/yyyy
+          if(rowDate){
+            var mmddyyyy=rowDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if(mmddyyyy) rowDate=mmddyyyy[3]+'-'+('0'+mmddyyyy[1]).slice(-2)+'-'+('0'+mmddyyyy[2]).slice(-2);
+          }
+          if(rowDate && rowDate!==selDate){ skipped++; return; }
+          var mWon=parseInt(r[3])||0, mLost=parseInt(r[4])||0;
+          var gWon=parseInt(r[5])||0, gLost=parseInt(r[6])||0;
+          var byes=parseInt(r[7])||0;
+          if(!S.playerStats[pid]) S.playerStats[pid]={};
+          var st=S.playerStats[pid][selSeason]||{wins:0,losses:0,gamesWon:0,gamesLost:0};
+          st.wins+=mWon; st.losses+=mLost; st.gamesWon+=gWon; st.gamesLost+=gLost;
+          S.playerStats[pid][selSeason]=st;
+          if(!S.byeCounts[pid]) S.byeCounts[pid]={};
+          S.byeCounts[pid][selSeason]=(S.byeCounts[pid][selSeason]||0)+byes;
+          imported++;
+        });
+        save(); render();
+        showResult('Imported '+imported+' player rows for '+fmtDate(selDate)+' into "'+selSeason+'".'+(skipped?' Skipped '+skipped+'.':''), true);
+      }catch(err){ showResult('Error parsing CSV: '+err.message, false); }
+    };
+    reader.readAsText(file);
+  });
+}
+
 
 // ── STATS CSV IMPORT ───────────────────────────────────
 function openClearStats(){
